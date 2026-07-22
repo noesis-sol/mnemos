@@ -58,7 +58,7 @@ when a list was truncated. Defaults return up to 100 items (hard cap 200).
 
 ## Quick start
 
-Requires Node 18+ (macOS). No clone, no setup — `npx` fetches and runs it:
+Requires Node 18+ (macOS, Windows, or Linux). No clone, no setup — `npx` fetches and runs it:
 
 **Claude Code**
 
@@ -114,5 +114,5 @@ node dist/index.js   # run the server (speaks MCP over stdio)
 ---
 
 <div align="center">
-<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Currently macOS + Google Chrome; PRs for other platforms and Chromium-based browsers welcome.</sub>
+<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Google Chrome on macOS, Windows, and Linux; PRs for other Chromium-based browsers welcome.</sub>
 </div>

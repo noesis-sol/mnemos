@@ -15,17 +15,34 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 
-const CHROME_BASE = path.join(
-  os.homedir(),
-  "Library",
-  "Application Support",
-  "Google",
-  "Chrome",
-);
+const require = createRequire(import.meta.url);
+const { version: VERSION } = require("../package.json") as { version: string };
+
+function chromeBase(): string {
+  switch (process.platform) {
+    case "darwin":
+      return path.join(os.homedir(), "Library", "Application Support", "Google", "Chrome");
+    case "win32":
+      return path.join(
+        process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"),
+        "Google",
+        "Chrome",
+        "User Data",
+      );
+    default: // linux and other unixes
+      return path.join(
+        process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"),
+        "google-chrome",
+      );
+  }
+}
+
+const CHROME_BASE = chromeBase();
 
 interface BookmarkNode {
   type?: string;
@@ -116,13 +133,14 @@ function* allBookmarks(): Generator<Entry> {
 /**
  * True if `needle` matches a folder name in the path at a word boundary.
  * Matching per path segment (not the joined path) prevents false positives
- * like "ai" matching "Painting".
+ * like "ai" matching "Painting". JS `\b` is ASCII-only, so Unicode-aware
+ * lookarounds are required for non-Latin folder names (e.g. Greek).
  */
 function folderMatches(fpath: string, needle: string): boolean {
   const trimmed = needle.trim().toLowerCase();
   if (!trimmed) return true;
   const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`\\b${escaped}\\b`);
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "u");
   return fpath.split("/").some((segment) => pattern.test(segment.toLowerCase()));
 }
 
@@ -156,7 +174,7 @@ function safely(fn: () => ToolResult): ToolResult {
 }
 
 const server = new McpServer(
-  { name: "mnemos", version: "0.1.0" },
+  { name: "mnemos", version: VERSION },
   {
     instructions:
       "Read-only access to the user's Chrome bookmarks. Bookmarks are things " +
