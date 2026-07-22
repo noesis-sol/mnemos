@@ -16,6 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { domainToUnicode } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -60,7 +61,7 @@ interface Entry {
 function bookmarksPath(): string {
   const override = process.env.CHROME_BOOKMARKS_PATH;
   if (override) return override;
-  const profile = process.env.CHROME_PROFILE ?? "Default";
+  const profile = process.env.CHROME_PROFILE || "Default"; // empty string → Default
   return path.join(CHROME_BASE, profile, "Bookmarks");
 }
 
@@ -97,13 +98,17 @@ function loadRoots(): Record<string, BookmarkNode> {
 
 // Chrome timestamps are microseconds since 1601-01-01 UTC. Imported or
 // corrupted bookmarks can carry out-of-range values — never let one bad
-// timestamp fail a whole tool call.
+// timestamp fail a whole tool call. Dates are rendered in the machine's
+// local timezone so "added yesterday evening" doesn't shift a day.
 function chromeTimeToIso(value: string | undefined): string | null {
   const micros = Number(value);
   if (!Number.isFinite(micros) || micros <= 0) return null;
   const date = new Date(micros / 1000 - 11_644_473_600_000);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
 function* walk(node: BookmarkNode, folder: string): Generator<Entry> {
@@ -111,7 +116,9 @@ function* walk(node: BookmarkNode, folder: string): Generator<Entry> {
     if (child.type === "url") {
       yield { folder, node: child };
     } else if (child.type === "folder") {
-      yield* walk(child, `${folder}/${child.name ?? ""}`);
+      // Join with " › " rather than "/": folder names can themselves contain
+      // slashes (e.g. "Vision / OCR"), which would corrupt segment matching.
+      yield* walk(child, `${folder} › ${child.name ?? ""}`);
     }
   }
 }
@@ -141,7 +148,7 @@ function folderMatches(fpath: string, needle: string): boolean {
   if (!trimmed) return true;
   const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "u");
-  return fpath.split("/").some((segment) => pattern.test(segment.toLowerCase()));
+  return fpath.split(" › ").some((segment) => pattern.test(segment.toLowerCase()));
 }
 
 function fmt(entry: Entry) {
@@ -250,7 +257,8 @@ server.registerTool(
     description:
       "List the user's bookmark folder tree with bookmark counts. Folder " +
       "names are the user's own taxonomy of what matters to them — use this " +
-      "to get an overview of their interest areas before searching.",
+      "to get an overview of their interest areas before searching. Nested " +
+      "paths are shown as segments joined with ' › '.",
     inputSchema: {},
   },
   async () =>
@@ -353,7 +361,11 @@ server.registerTool(
       for (const entry of allBookmarks()) {
         let host = "";
         try {
-          host = new URL(entry.node.url ?? "").hostname.replace(/^www\./, "");
+          const url = new URL(entry.node.url ?? "");
+          // Only web pages count as "sources" — skip chrome://, file://, etc.
+          if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+          // Render internationalized domains readably, not as xn-- punycode.
+          host = domainToUnicode(url.hostname.replace(/^www\./, ""));
         } catch {
           continue; // bookmarklets and malformed URLs
         }
