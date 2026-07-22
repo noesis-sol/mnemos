@@ -9,7 +9,8 @@
 Chrome bookmarks — not as a pile of links, but as a curated signal of what you
 consider important, which sources you trust, and which opinions you endorse.
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue?logo=python&logoColor=white)](https://www.python.org)
+[![npm](https://img.shields.io/badge/npm-mnemos--mcp-CB3837?logo=npm)](https://www.npmjs.com/package/mnemos-mcp)
+[![Node 18+](https://img.shields.io/badge/node-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-8A2BE2)](https://modelcontextprotocol.io)
 [![Local only](https://img.shields.io/badge/data-never%20leaves%20your%20machine-2ea44f)]()
 [![Read-only](https://img.shields.io/badge/access-read--only-lightgrey)]()
@@ -57,17 +58,12 @@ when a list was truncated. Defaults return up to 100 items (hard cap 200).
 
 ## Quick start
 
-Requires [uv](https://docs.astral.sh/uv/) and Python 3.11+ (macOS).
-
-```sh
-git clone git@github.com:noesis-sol/mnemos.git
-cd mnemos
-```
+Requires Node 18+ (macOS). No clone, no setup — `npx` fetches and runs it:
 
 **Claude Code**
 
 ```sh
-claude mcp add --scope user mnemos -- uv run --directory "$(pwd)" bookmarks-mcp
+claude mcp add --scope user mnemos -- npx -y mnemos-mcp
 ```
 
 **Claude Desktop** — add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
@@ -76,8 +72,8 @@ claude mcp add --scope user mnemos -- uv run --directory "$(pwd)" bookmarks-mcp
 {
   "mcpServers": {
     "mnemos": {
-      "command": "uv",
-      "args": ["run", "--directory", "/absolute/path/to/mnemos", "bookmarks-mcp"]
+      "command": "npx",
+      "args": ["-y", "mnemos-mcp"]
     }
   }
 }
@@ -104,17 +100,19 @@ do — no cryptic tracebacks.
 - **Read-only.** mnemos never modifies your bookmarks file.
 - **Local-only.** No network calls, no telemetry — data goes from disk to your MCP client and nowhere else.
 - **Zero state.** The file is re-read per call, so results always reflect what's in Chrome right now.
-- **One file.** The whole server is [`bookmarks_mcp.py`](bookmarks_mcp.py) — auditable in five minutes.
+- **One file.** The whole server is [`src/index.ts`](src/index.ts) — auditable in five minutes.
 
 ## Development
 
 ```sh
-uv run bookmarks-mcp        # run the server (speaks MCP over stdio)
-uv run python -c 'import bookmarks_mcp as b; print(b.list_folders())'   # poke tools directly
+git clone git@github.com:noesis-sol/mnemos.git && cd mnemos
+npm install          # installs deps and builds via the prepare script
+npm run build        # recompile after changes
+node dist/index.js   # run the server (speaks MCP over stdio)
 ```
 
 ---
 
 <div align="center">
-<sub>Built with the <a href="https://github.com/modelcontextprotocol/python-sdk">official MCP Python SDK</a>. Currently macOS + Google Chrome; PRs for other platforms and Chromium-based browsers welcome.</sub>
+<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Currently macOS + Google Chrome; PRs for other platforms and Chromium-based browsers welcome.</sub>
 </div>
