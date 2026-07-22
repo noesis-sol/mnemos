@@ -63,7 +63,12 @@ test("chromeTimeToIso: zero, negative, missing, and garbage all return null", ()
 // --- chromeBase / bookmarksPath -------------------------------------------
 
 test("chromeBase: macOS path", () => {
-  assert.match(chromeBase("darwin", {}), /Library\/Application Support\/Google\/Chrome$/);
+  // Normalize separators: path.join uses "\" when the test host is Windows,
+  // regardless of which platform's layout we ask for.
+  assert.match(
+    chromeBase("darwin", {}).replaceAll("\\", "/"),
+    /Library\/Application Support\/Google\/Chrome$/,
+  );
 });
 
 test("chromeBase: Windows honors LOCALAPPDATA", () => {
