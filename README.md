@@ -113,6 +113,7 @@ do — no cryptic tracebacks.
 ```sh
 git clone git@github.com:noesis-sol/mnemos.git && cd mnemos
 npm install          # installs deps and builds via the prepare script
+npm test             # unit + fixture + protocol tests (node:test, zero extra deps)
 npm run build        # recompile after changes
 node dist/index.js   # run the server (speaks MCP over stdio)
 ```

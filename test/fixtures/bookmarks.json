@@ -1,0 +1,120 @@
+{
+  "checksum": "irrelevant",
+  "roots": {
+    "bookmark_bar": {
+      "type": "folder",
+      "name": "Bookmarks bar",
+      "children": [
+        {
+          "type": "url",
+          "name": "Gmail",
+          "url": "https://mail.google.com/",
+          "date_added": "13349793600000000"
+        },
+        {
+          "type": "folder",
+          "name": "AI",
+          "children": [
+            {
+              "type": "url",
+              "name": "OpenAI",
+              "url": "https://openai.com/",
+              "date_added": "13393252800000000"
+            },
+            {
+              "type": "url",
+              "name": "Anthropic docs",
+              "url": "https://docs.anthropic.com/",
+              "date_added": "13393252800000000"
+            }
+          ]
+        },
+        {
+          "type": "folder",
+          "name": "Painting",
+          "children": [
+            {
+              "type": "url",
+              "name": "Watercolor basics",
+              "url": "https://example.com/watercolor",
+              "date_added": "13349793600000000"
+            }
+          ]
+        },
+        {
+          "type": "folder",
+          "name": "Ελληνική",
+          "children": [
+            {
+              "type": "url",
+              "name": "Καβάφης — Ποιήματα",
+              "url": "https://www.greek-language.gr/kavafis",
+              "date_added": "13349793600000000"
+            }
+          ]
+        },
+        {
+          "type": "folder",
+          "name": "Vision / OCR",
+          "children": [
+            {
+              "type": "url",
+              "name": "Tesseract",
+              "url": "https://github.com/tesseract-ocr/tesseract",
+              "date_added": "13349793600000000"
+            }
+          ]
+        },
+        {
+          "type": "url",
+          "name": "Corrupt future date",
+          "url": "https://example.com/corrupt",
+          "date_added": "99999999999999999999"
+        },
+        {
+          "type": "url",
+          "name": "Chrome settings",
+          "url": "chrome://settings/",
+          "date_added": "13349793600000000"
+        },
+        {
+          "type": "url",
+          "name": "Bookmarklet",
+          "url": "javascript:alert(1)",
+          "date_added": "13349793600000000"
+        },
+        {
+          "type": "url",
+          "name": "Greek IDN site",
+          "url": "https://www.xn--mxahbxey0c.gr/",
+          "date_added": "13349793600000000"
+        }
+      ]
+    },
+    "other": {
+      "type": "folder",
+      "name": "Other bookmarks",
+      "children": [
+        {
+          "type": "url",
+          "name": "GitHub repo one",
+          "url": "https://github.com/a/one",
+          "date_added": "13349793600000000"
+        },
+        {
+          "type": "url",
+          "name": "GitHub repo two",
+          "url": "https://www.github.com/a/two",
+          "date_added": "13393252800000000"
+        }
+      ]
+    },
+    "synced": {
+      "type": "folder",
+      "name": "Mobile bookmarks",
+      "children": []
+    },
+    "sync_transaction_version": "1"
+  },
+  "version": 1
+}
