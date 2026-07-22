@@ -10,6 +10,7 @@ Chrome bookmarks — not as a pile of links, but as a curated signal of what you
 consider important, which sources you trust, and which opinions you endorse.
 
 [![npm](https://img.shields.io/npm/v/mnemos-mcp?logo=npm&color=CB3837)](https://www.npmjs.com/package/mnemos-mcp)
+[![CI](https://github.com/noesis-sol/mnemos/actions/workflows/ci.yml/badge.svg)](https://github.com/noesis-sol/mnemos/actions/workflows/ci.yml)
 [![Node 18+](https://img.shields.io/badge/node-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-8A2BE2)](https://modelcontextprotocol.io)
 [![Local only](https://img.shields.io/badge/data-never%20leaves%20your%20machine-2ea44f)]()
@@ -117,6 +118,11 @@ npm test             # unit + fixture + protocol tests (node:test, zero extra de
 npm run build        # recompile after changes
 node dist/index.js   # run the server (speaks MCP over stdio)
 ```
+
+Tests run against a synthetic bookmarks fixture in [`test/fixtures/`](test/fixtures/)
+— they never read your real Chrome profile. (Fixtures are injected via the same
+`CHROME_BOOKMARKS_PATH` override users can set; new tests should do the same.)
+CI runs the suite on macOS, Windows, and Linux across Node 18 and 22.
 
 ---
 
