@@ -9,7 +9,7 @@
 Chrome bookmarks — not as a pile of links, but as a curated signal of what you
 consider important, which sources you trust, and which opinions you endorse.
 
-[![npm](https://img.shields.io/badge/npm-mnemos--mcp-CB3837?logo=npm)](https://www.npmjs.com/package/mnemos-mcp)
+[![npm](https://img.shields.io/npm/v/mnemos-mcp?logo=npm&color=CB3837)](https://www.npmjs.com/package/mnemos-mcp)
 [![Node 18+](https://img.shields.io/badge/node-18+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/protocol-MCP-8A2BE2)](https://modelcontextprotocol.io)
 [![Local only](https://img.shields.io/badge/data-never%20leaves%20your%20machine-2ea44f)]()
@@ -92,6 +92,12 @@ Then ask things like:
 | `CHROME_PROFILE` | `Default` | Chrome profile directory name (e.g. `Profile 3`) |
 | `CHROME_BOOKMARKS_PATH` | — | Absolute path to any `Bookmarks` file; overrides the profile |
 
+> Profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
+> `%LOCALAPPDATA%\Google\Chrome\User Data` (Windows), and
+> `~/.config/google-chrome` (Linux). Directory names are `Default`,
+> `Profile 1`, `Profile 2`, … — **not** the display names you see in
+> Chrome's UI.
+
 If the profile has no bookmarks file, mnemos tells the assistant which profiles
 do — no cryptic tracebacks.
 
@@ -115,4 +121,6 @@ node dist/index.js   # run the server (speaks MCP over stdio)
 
 <div align="center">
 <sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Google Chrome on macOS, Windows, and Linux; PRs for other Chromium-based browsers welcome.</sub>
+<br>
+<sub>MIT © Michail Michailidis</sub>
 </div>
