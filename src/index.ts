@@ -57,13 +57,15 @@ server.registerTool(
     description:
       "Search the user's bookmarks by title, URL, and folder path. Use this " +
       "to check whether the user has saved material about a topic — a hit " +
-      "means the user found that page important or agreeable. All words in " +
+      "means the user found that page important or agreeable. Every word in " +
       "`query` must appear in the title, URL, or folder path (case-" +
-      "insensitive). Note: because the folder path is searched too, a topic " +
-      "word matches everything filed under a folder of that name. Optionally " +
-      "restrict to folders whose name matches `folder` (word-boundary match). " +
-      "Returns JSON with `total_matches`; if it exceeds `limit`, the list is " +
-      "truncated — do not assume the returned items are all there is.",
+      "insensitive), matching at the start of a word: 'kubernet' finds " +
+      "'Kubernetes', but 'ai' does not match 'Gmail'. Note: because the " +
+      "folder path is searched too, a topic word matches everything filed " +
+      "under a folder of that name. Optionally restrict to folders whose name " +
+      "matches `folder` (whole-word match). Returns JSON with " +
+      "`total_matches`; if it exceeds `limit`, the list is truncated — do not " +
+      "assume the returned items are all there is.",
     inputSchema: {
       query: z.string().describe("Search words; all must match"),
       folder: z
@@ -81,10 +83,14 @@ server.registerTool(
   {
     title: "List bookmark folders",
     description:
-      "List the user's bookmark folder tree with bookmark counts. Folder " +
-      "names are the user's own taxonomy of what matters to them — use this " +
-      "to get an overview of their interest areas before searching. Nested " +
-      "paths are shown as segments joined with ' › '.",
+      "List the user's whole bookmark folder tree with bookmark counts. " +
+      "Folder names are the user's own taxonomy of what matters to them — use " +
+      "this to get an overview of their interest areas before searching. " +
+      "Nested paths are shown as segments joined with ' › '. Every folder is " +
+      "listed, including ones holding only subfolders: `bookmarks` counts " +
+      "only bookmarks sitting directly in that folder, while " +
+      "`subtree_bookmarks` includes its subfolders and is what " +
+      "list_folder_contents on that name would return.",
     inputSchema: {},
   },
   async () => safely(() => lib.listFolders()),
@@ -115,7 +121,10 @@ server.registerTool(
     title: "Recent bookmarks",
     description:
       "Return the most recently added bookmarks, newest first. Use this to " +
-      "see what the user is currently interested in or researching.",
+      "see what the user is currently interested in or researching. Bookmarks " +
+      "whose stored date is missing or impossible (in the future) sort last " +
+      "and report `added: null`. Returns JSON with `total_matches`; if it " +
+      "exceeds `limit`, the list is truncated.",
     inputSchema: {
       limit: z.number().int().optional().describe("Max results (default 100, cap 200)"),
     },
@@ -130,7 +139,10 @@ server.registerTool(
     description:
       "Return the domains the user bookmarks most often, with counts. " +
       "Frequently bookmarked domains are sources the user trusts and " +
-      "returns to — treat them as the user's approved sources.",
+      "returns to — treat them as the user's approved sources. Returns JSON " +
+      "with `total_matches` (distinct domains); if it exceeds `limit`, the " +
+      "list is truncated — the returned domains are the user's top sources, " +
+      "not the complete set of sources they trust.",
     inputSchema: {
       limit: z.number().int().optional().describe("Max domains (default 25, cap 100)"),
     },

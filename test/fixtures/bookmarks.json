@@ -66,10 +66,55 @@
           ]
         },
         {
+          "type": "folder",
+          "name": "Empty Shelf",
+          "children": []
+        },
+        {
+          "type": "folder",
+          "name": "Research",
+          "children": [
+            {
+              "type": "folder",
+              "name": "Papers",
+              "children": [
+                {
+                  "type": "url",
+                  "name": "Attention is all you need",
+                  "url": "https://arxiv.org/abs/1706.03762",
+                  "date_added": "13349793600000000"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Untyped link",
+          "url": "https://untyped.example/page",
+          "date_added": "13349793600000000"
+        },
+        {
+          "name": "Untyped folder",
+          "children": [
+            {
+              "type": "url",
+              "name": "Buried under an untyped folder",
+              "url": "https://untyped.example/buried",
+              "date_added": "13349793600000000"
+            }
+          ]
+        },
+        {
           "type": "url",
           "name": "Corrupt future date",
           "url": "https://example.com/corrupt",
           "date_added": "99999999999999999999"
+        },
+        {
+          "type": "url",
+          "name": "Corrupt plausible future date",
+          "url": "https://example.com/year-3000",
+          "date_added": "44148153600000000"
         },
         {
           "type": "url",

@@ -8,6 +8,9 @@
 // white) since Amber 500 only reaches 1.63:1 there.
 //
 // Total inlined size: ~7.3 KB, sent once per session on `initialize`.
+//
+// The `Icon` type and `Implementation.icons` first ship in SDK 1.18.0, which
+// is why package.json floors the dependency there rather than at 1.12.
 
 import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 
