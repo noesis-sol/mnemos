@@ -19,6 +19,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as lib from "./lib.js";
+import { ICONS } from "./icon.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -36,7 +37,7 @@ function safely(fn: () => unknown): ToolResult {
 }
 
 const server = new McpServer(
-  { name: "mnemos", version: VERSION },
+  { name: "mnemos", version: VERSION, icons: ICONS },
   {
     instructions:
       "Read-only access to the user's Chrome bookmarks. Bookmarks are things " +
