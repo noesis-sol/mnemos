@@ -48,14 +48,15 @@ stdio, so it works with any MCP client.
 
 | Tool | What it tells your assistant |
 |------|------------------------------|
-| 🔍 `search_bookmarks(query, folder?, limit?)` | Has the user saved material on this topic? Every query word must match the title, URL, or folder path. |
-| 🗂 `list_folders()` | The user's own taxonomy of interests — the full folder tree with counts. |
-| 📁 `list_folder_contents(folder, limit?)` | Everything saved under a topic (word-boundary folder matching, subfolders included). |
+| 🔍 `search_bookmarks(query, folder?, limit?)` | Has the user saved material on this topic? Every query word must match the title, URL, or folder path, at the start of a word — `kubernet` finds *Kubernetes*, `ai` doesn't match *Gmail*. |
+| 🗂 `list_folders()` | The user's own taxonomy of interests — every folder, with direct and subtree counts. |
+| 📁 `list_folder_contents(folder, limit?)` | Everything saved under a topic (whole-word folder matching, subfolders included). |
 | 🕐 `recent_bookmarks(limit?)` | What the user is focused on right now, newest first. |
 | 🌐 `top_domains(limit?)` | The sources the user trusts and returns to, ranked by bookmark count. |
 
-Results are JSON with a `total_matches` count, so the assistant always knows
-when a list was truncated. Defaults return up to 100 items (hard cap 200).
+Every tool that can truncate reports a `total_matches` count, so the assistant
+always knows when it is looking at a partial list. Defaults return up to 100
+items (hard cap 200; `top_domains` defaults to 25, cap 100).
 
 ## Quick start
 

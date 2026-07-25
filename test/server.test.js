@@ -51,6 +51,29 @@ test("e2e: tool call round-trips against the fixture", async () => {
   assert.equal(data.matches[0].url, "https://openai.com/");
 });
 
+test("e2e: every truncating tool reports total_matches over the wire", async () => {
+  // list_folders is the one tool with no limit, so it has nothing to truncate.
+  for (const name of ["search_bookmarks", "list_folder_contents", "recent_bookmarks", "top_domains"]) {
+    const args = { limit: 1 };
+    if (name === "search_bookmarks") args.query = "https";
+    if (name === "list_folder_contents") args.folder = "Bookmarks Bar";
+    const result = await client.callTool({ name, arguments: args });
+    const data = JSON.parse(result.content[0].text);
+    assert.equal(typeof data.total_matches, "number", `${name} reports total_matches`);
+    assert.ok(data.total_matches > 1, `${name} has more than it returned`);
+    const items = data.matches ?? data.bookmarks ?? data.domains;
+    assert.equal(items.length, 1, `${name} honored limit`);
+  }
+});
+
+test("e2e: zod rejects a non-integer limit before it reaches cap()", async () => {
+  const result = await client.callTool({
+    name: "recent_bookmarks",
+    arguments: { limit: 2.5 },
+  });
+  assert.equal(result.isError, true);
+});
+
 test("e2e: filesystem failure surfaces as isError, not a crash", async () => {
   // A second server pointed at a nonexistent file must still answer politely.
   const broken = new Client({ name: "mnemos-test-broken", version: "0.0.0" });
