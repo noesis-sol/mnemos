@@ -5,16 +5,20 @@
  * server has no HTTP origin to serve icons from, so the images are inlined as
  * base64 data URIs and shipped inside dist/.
  *
- * Run with: node scripts/build-icons.mjs
+ * Run with: node scripts/build-icons.mjs [output path]
+ *
+ * The output path defaults to src/icon.ts; test/icons.test.js passes a scratch
+ * path to compare a fresh render with the committed file.
  *
  * The PNGs in assets/ are rasterized from the SVGs and committed, so this
  * script needs no SVG rasterizer and runs on any platform.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const outPath = process.argv[2] ? resolve(process.argv[2]) : join(root, "src", "icon.ts");
 
 /** One entry per (theme, format, size). `sizes: ["any"]` marks the scalable SVG. */
 const SOURCES = [
@@ -54,5 +58,5 @@ import type { Icon } from "@modelcontextprotocol/sdk/types.js";
 export const ICONS: Icon[] = ${JSON.stringify(icons, null, 2)};
 `;
 
-writeFileSync(join(root, "src", "icon.ts"), out);
-console.log(`wrote src/icon.ts — ${icons.length} icons, ${(bytes / 1024).toFixed(1)} KB inlined`);
+writeFileSync(outPath, out);
+console.log(`wrote ${relative(root, outPath)} — ${icons.length} icons, ${(bytes / 1024).toFixed(1)} KB inlined`);
