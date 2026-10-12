@@ -66,11 +66,11 @@ ubuntu, macOS and Windows with Node 18 and 22.
 - **Tests**: `test/tools.test.js` (unit): direct counts and the ` › ` separator; empty folders and
   folders holding only subfolders are listed with `subtree_bookmarks`; non-folder values in
   `roots` are skipped; `total_bookmarks` counts each bookmark once; a brand-new empty profile
-  reports zero.
-- **Untested**: folders sorted by name; a root key other than `bookmark_bar`, `other` or `synced`
-  labelled with its key; a folder with no `name`; two sibling folders with the same name merging
-  into one row; a successful call over the wire (only the error path is driven through MCP).
-- **Tickets**: mnemos-2gg.8; mnemos-2gg.11 (a successful call over the wire)
+  reports zero. `test/folders-edges.test.js` (unit): folders sorted by name with `localeCompare`;
+  a root key other than `bookmark_bar`, `other` or `synced` labelled with its key; a folder with
+  no `name`; two sibling folders with the same name merging into one row with summed counts.
+- **Untested**: a successful call over the wire (only the error path is driven through MCP).
+- **Tickets**: mnemos-2gg.11 (a successful call over the wire)
 
 ## list_folder_contents
 
@@ -79,10 +79,10 @@ ubuntu, macOS and Windows with Node 18 and 22.
   folder; empty name rejected; subfolders included (via the Research count). `test/lib.test.js`
   (unit): `folderMatches` case, ancestors, Unicode, `/` in names, regex characters, the literal
   `A › B` folder. `test/server.test.js` (e2e): `limit: 1` on `Bookmarks Bar` reports
-  `total_matches`.
-- **Untested**: the `No folder matches` note; `limit: 0`, the default limit of 100 and the cap of
-  200 in `lib`; matching a root label (`Other Bookmarks`, `Mobile Bookmarks`).
-- **Tickets**: mnemos-2gg.8
+  `total_matches`. `test/folders-edges.test.js` (unit): the `No folder matches` note; `limit: 0`,
+  the default limit of 100 and the cap of 200 with `total_matches` intact; a root label
+  (`Other Bookmarks`) matching its whole root.
+- **Untested**: nothing known.
 
 ## recent_bookmarks
 
