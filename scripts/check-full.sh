@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 printf '%s\n' 'SUITE: scripts/check-fast.sh'
 scripts/check-fast.sh
 
-# package dry run, from .github/workflows/ci.yml:25
-printf '%s\n' 'SUITE: package dry run'
-npm pack --dry-run
+# published package (e2e): packs the tarball (building through `prepare`), unpacks it, checks its
+# files and bin, and starts the server through the bin. Kept out of `npm test`'s discovery.
+printf '%s\n' 'SUITE: published package (e2e)'
+node --test e2e/package.e2e.js

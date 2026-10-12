@@ -21,5 +21,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      # Guard the publishable artifact: tarball must contain dist + bin target.
-      - run: npm pack --dry-run
+      # Guard the publishable artifact: pack, unpack, check dist + the bin
+      # target, and start the server through the bin.
+      - run: node --test e2e/package.e2e.js

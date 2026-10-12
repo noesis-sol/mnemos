@@ -12,8 +12,8 @@ synthetic fixture `test/fixtures/bookmarks.json`, injected through `CHROME_BOOKM
 |-------|--------|---------|--------------|
 | dependencies | `scripts/check-fast.sh` | `npm ci --ignore-scripts` | only when `node_modules` is missing or older than `package-lock.json` |
 | build | `scripts/check-fast.sh` | `npm run build` | `tsc`, type-checks `src/` |
-| unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (66 tests, ~0.5s) |
-| package dry run | `scripts/check-full.sh` | `npm pack --dry-run` | lists the tarball (runs `prepare`, so builds again); asserts nothing about its contents |
+| unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (118 tests, ~1s) |
+| published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
 
 `npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
 files: a new file named `test/<feature>.test.js` runs with no edit to `package.json`. Node 18
@@ -22,14 +22,16 @@ and 20 search directories, Node 22 and later match glob patterns; on all of them
 every `*.test.js`, `*-test.js`, `*_test.js`, `test-*.js` or `test.js` elsewhere, `dist/`
 included. So keep helper modules out of `test/` or give them no top-level side effects, and
 keep test files out of `src/` (tsc would copy them into `dist/`, where they would run too).
+Suites too slow for `npm test` live in `e2e/` with names none of those patterns match
+(`<feature>.e2e.js`), and `scripts/check-full.sh` runs each by path.
 
 Runner times on macOS, Node 24, three runs each with `node_modules` installed:
 
-- `scripts/check-fast.sh`: 3s–9s (about 4s warm; the first run after a build cache miss is slowest)
-- `scripts/check-full.sh`: 3s–9s (about 4s warm; it runs check-fast first)
+- `scripts/check-fast.sh`: about 2.3s warm (the first run after a build cache miss is slowest)
+- `scripts/check-full.sh`: about 3.8s warm (check-fast, then packs, unpacks and starts the package)
 
-CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm test` and `npm pack --dry-run` on
-ubuntu, macOS and Windows with Node 18 and 22.
+CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm test` and `node --test e2e/package.e2e.js`
+on ubuntu, macOS and Windows with Node 18 and 22.
 
 ## MCP server start and handshake
 
@@ -41,7 +43,9 @@ ubuntu, macOS and Windows with Node 18 and 22.
   `test/server-info.test.js` (same e2e setup): `serverInfo` has name `mnemos` and the
   `package.json` version, six SVG or PNG data-URI icons; the `instructions` string mentions
   `search_bookmarks`; the capabilities include `tools`.
-- **Untested**: the bin is never run through its shebang: the e2e test runs it with `node`.
+  `e2e/package.e2e.js` starts the unpacked package through its bin file, directly on POSIX so
+  the shebang runs (see Published package).
+- **Untested**: nothing known.
 - **Tickets**: mnemos-2gg.4 (serverInfo, instructions, icons); mnemos-2gg.12 (the bin through its shebang)
 
 ## search_bookmarks
@@ -154,9 +158,15 @@ ubuntu, macOS and Windows with Node 18 and 22.
 ## Published package
 
 - **Reached by**: `npm publish` / `npx -y mnemos-mcp`; `files` and `bin` in `package.json`.
-- **Tests**: `scripts/check-full.sh` runs `npm pack --dry-run`, which only lists the contents.
-- **Untested**: the tarball containing `dist/index.js`, `dist/lib.js`, `dist/icon.js` and
-  `package.json`, and no `src/` or `test/`; the `bin` target existing in the tarball and starting
-  with `#!/usr/bin/env node`; the unpacked package starting through its bin and answering an MCP
-  handshake.
+- **Tests**: `e2e/package.e2e.js` (e2e, run by `scripts/check-full.sh` and CI, not `npm test`):
+  `npm pack --json --pack-destination` a scratch directory, then `tar -xzf`; the tarball lists
+  and unpacks `dist/index.js`, `dist/lib.js`, `dist/icon.js` and `package.json`, and nothing from
+  `src/`, `test/` or `e2e/`; `package.json`'s one `bin` target is in the tarball and its first
+  line is `#!/usr/bin/env node`; with `node_modules` linked (a junction) to the repo's installed
+  dependencies (no `npm install`, no network) and the bin made executable as `npm install` would
+  (the tarball stores it `0644`), the unpacked package starts through its bin, spawned directly
+  on POSIX to exercise the shebang and with `process.execPath` on Windows, and the SDK `Client`
+  gets `serverInfo` named `mnemos` from `initialize` and the five tools from `tools/list`.
+- **Untested**: `npm publish` itself and a real `npx -y mnemos-mcp` install from the registry;
+  the Windows `npm` shim that runs the bin.
 - **Tickets**: mnemos-2gg.12
