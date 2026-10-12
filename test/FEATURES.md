@@ -52,13 +52,14 @@ ubuntu, macOS and Windows with Node 18 and 22.
   matching (`ai` misses Gmail and Painting, prefixes match); `total_matches` before truncation;
   folder filter with word-boundary segments; unmatched folder filter note; blank folder filter
   ignored; nodes missing `type`; 5,000-level nesting. `test/lib.test.js` (unit):
-  `queryMatches` word starts, Unicode. `test/server.test.js` (e2e): one call by query, one with
-  `limit: 1`.
-- **Untested**: the note when nothing matches and no folder filter is given; `limit: 0` and a
-  negative limit (empty list, true `total_matches`); the default limit of 100 and the cap of 200
-  on a file with more than 200 matches; regex special characters in a query word (`c++`,
-  `(2024)`); results coming back in document order; the `folder` argument over the wire.
-- **Tickets**: mnemos-2gg.7; mnemos-2gg.11 (the `folder` argument over the wire)
+  `queryMatches` word starts, Unicode. `test/search-limits.test.js` (unit): the plain note when
+  nothing matches and no (or a blank) folder filter is given, without `list_folders`; `limit: 0`
+  and `limit: -3` give an empty list with the true `total_matches`; on a generated file with 250
+  matches the default limit returns 100 and `limit: 500` returns 200; `c++` and `(2024)` match
+  literally; results come back in document order (pre-order, across roots). `test/server.test.js`
+  (e2e): one call by query, one with `limit: 1`.
+- **Untested**: the `folder` argument over the wire.
+- **Tickets**: mnemos-2gg.11 (the `folder` argument over the wire)
 
 ## list_folders
 
