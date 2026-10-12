@@ -74,19 +74,27 @@ test("a missing profile's error lists the profiles with a Bookmarks file, sorted
   fs.writeFileSync(path.join(chromeDir(), "Local State"), "{}"); // a file, not a profile
   process.env.CHROME_PROFILE = "Profile 9";
   const missing = path.join(chromeDir(), "Profile 9", "Bookmarks");
-  assert.throws(
-    () => lib.loadRoots(),
-    (err) => {
-      assert.ok(err.message.includes(`No bookmarks file at ${missing}.`), err.message);
-      assert.ok(
-        err.message.includes("Chrome profiles that have bookmarks: Default, Profile 1, Profile 2."),
-        err.message,
-      );
-      assert.ok(!err.message.includes("Guest Profile"), err.message);
-      assert.ok(err.message.includes("Set CHROME_PROFILE"), err.message);
-      return true;
-    },
-  );
+  // APFS and NTFS already list directories in name order, so serve the entries
+  // reversed: the list can only come out sorted if loadRoots sorts it.
+  const readdirSync = fs.readdirSync;
+  fs.readdirSync = (...args) => readdirSync(...args).reverse();
+  try {
+    assert.throws(
+      () => lib.loadRoots(),
+      (err) => {
+        assert.ok(err.message.includes(`No bookmarks file at ${missing}.`), err.message);
+        assert.ok(
+          err.message.includes("Chrome profiles that have bookmarks: Default, Profile 1, Profile 2."),
+          err.message,
+        );
+        assert.ok(!err.message.includes("Guest Profile"), err.message);
+        assert.ok(err.message.includes("Set CHROME_PROFILE"), err.message);
+        return true;
+      },
+    );
+  } finally {
+    fs.readdirSync = readdirSync;
+  }
 });
 
 test("the error says 'none' when the Chrome directory does not exist", () => {
