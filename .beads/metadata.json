@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "mnemos",
+  "project_id": "c00f6e93-c0c0-487e-9cd3-ccbbbbf56690"
+}
