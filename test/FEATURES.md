@@ -12,11 +12,16 @@ synthetic fixture `test/fixtures/bookmarks.json`, injected through `CHROME_BOOKM
 |-------|--------|---------|--------------|
 | dependencies | `scripts/check-fast.sh` | `npm ci --ignore-scripts` | only when `node_modules` is missing or older than `package-lock.json` |
 | build | `scripts/check-fast.sh` | `npm run build` | `tsc`, type-checks `src/` |
-| unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test test/lib.test.js test/tools.test.js test/server.test.js` (66 tests, ~0.5s) |
+| unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (66 tests, ~0.5s) |
 | package dry run | `scripts/check-full.sh` | `npm pack --dry-run` | lists the tarball (runs `prepare`, so builds again); asserts nothing about its contents |
 
-`npm test` names its test files one by one in `package.json`, so a new test file is not run
-until it is added there (mnemos-2gg.3 switches it to discovery).
+`npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
+files: a new file named `test/<feature>.test.js` runs with no edit to `package.json`. Node 18
+and 20 search directories, Node 22 and later match glob patterns; on all of them (checked on
+18, 20, 22 and 24) the runner skips `node_modules/` and runs every `.js` file under `test/` and
+every `*.test.js`, `*-test.js`, `*_test.js`, `test-*.js` or `test.js` elsewhere, `dist/`
+included. So keep helper modules out of `test/` or give them no top-level side effects, and
+keep test files out of `src/` (tsc would copy them into `dist/`, where they would run too).
 
 Runner times on macOS, Node 24, three runs each with `node_modules` installed:
 
