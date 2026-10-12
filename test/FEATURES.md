@@ -127,11 +127,12 @@ ubuntu, macOS and Windows with Node 18 and 22.
 - **Reached by**: any tool call; `safely()` in `src/index.ts` turns a thrown error into an
   `isError` result, and zod validates arguments.
 - **Tests**: `test/server.test.js` (e2e): a missing bookmarks file gives `isError` with the
-  friendly message; `limit: 2.5` is rejected.
-- **Untested**: a missing required argument (`query`, `folder`) and a wrong type (`query: 5`)
-  rejected as `isError`; an empty query answered as a normal result carrying `error`, not
-  `isError`; a malformed or non-Chrome bookmarks file surfacing as `isError` with its message;
-  calling an unknown tool name.
+  friendly message; `limit: 2.5` is rejected. `test/server-errors.test.js` (e2e): a missing
+  required argument (`query`, `folder`) and a wrong type (`query: 5`) rejected as `isError`; an
+  empty query answered as a normal result carrying `error`, not `isError`; a malformed or
+  non-Chrome bookmarks file surfacing as `isError` with its message; an unknown tool name is
+  an error; `list_folders` and a `folder`-filtered search over the wire.
+- **Untested**: nothing known.
 - **Tickets**: mnemos-2gg.11
 
 ## Icons
