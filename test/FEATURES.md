@@ -92,10 +92,11 @@ ubuntu, macOS and Windows with Node 18 and 22.
   `added: null`; `total_matches` with truncation. `test/lib.test.js` (unit): `chromeTimeToIso`
   dates, out-of-range, zero/negative/garbage, the clock-skew allowance, pre-1970 dates.
   `test/server.test.js` (e2e): `limit: 1`; a non-integer limit rejected by zod.
-- **Untested**: a bookmark with no `date_added` sorting last with `added: null`; the order of
-  bookmarks sharing a timestamp; the default limit of 100 and the cap of 200; dates rendered in
-  the machine's local timezone (a timestamp near midnight UTC under a non-UTC `TZ`).
-- **Tickets**: mnemos-2gg.9
+  `test/recent-edges.test.js` (unit): a bookmark with no `date_added` sorts last with
+  `added: null`; bookmarks sharing a timestamp keep document order; the default limit of 100 and
+  the cap of 200 with `total_matches` intact; a 23:30 UTC timestamp renders as the next day under
+  `TZ=Asia/Tokyo` and the same day under `TZ=UTC`.
+- **Untested**: nothing known.
 
 ## top_domains
 
