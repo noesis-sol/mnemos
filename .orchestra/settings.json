@@ -1,0 +1,9 @@
+{
+  "check_fast": "scripts/check-fast.sh",
+  "check_fast_timeout": "30m",
+  "check_full": "scripts/check-full.sh",
+  "check_full_timeout": "60m",
+  "concurrent": 4,
+  "mcp_servers": [],
+  "setup": "npm ci"
+}
