@@ -115,12 +115,13 @@ ubuntu, macOS and Windows with Node 18 and 22.
 - **Tests**: `test/lib.test.js` (unit): `chromeBase` per platform, `LOCALAPPDATA` and
   `XDG_CONFIG_HOME` honoured, empty variables treated as unset; `bookmarksPath` override and empty
   `CHROME_PROFILE`. `test/tools.test.js` (unit): missing file, malformed JSON and a non-Chrome
-  JSON file all give friendly errors.
-- **Untested**: `CHROME_PROFILE` actually selecting `<chrome dir>/<profile>/Bookmarks` when the
-  file is read; the missing-file error listing the profiles that do have a `Bookmarks` file,
-  sorted, or `none` when the Chrome directory is missing; an empty `CHROME_BOOKMARKS_PATH`
-  falling back to the profile.
-- **Tickets**: mnemos-2gg.6
+  JSON file all give friendly errors. `test/profiles.test.js` (unit, against a fake Chrome
+  directory): `CHROME_PROFILE='Profile 3'` reads `<chrome dir>/Profile 3/Bookmarks` and no
+  `CHROME_PROFILE` reads `Default`; the missing-file error lists the profiles that have a
+  `Bookmarks` file, sorted, skipping those without one, and says `none` when the Chrome directory
+  is missing or no profile has bookmarks; an empty `CHROME_BOOKMARKS_PATH` falls back to the
+  profile.
+- **Untested**: nothing known.
 
 ## Tool errors over MCP
 
