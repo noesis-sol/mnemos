@@ -512,17 +512,20 @@ export class Fetcher {
     }
     store.addPendingPages();
     this.applyPolicy(store, info, config);
+    const now = this.now();
     const due: QueueItem[] = [];
-    for (const { url, pending } of store.duePages(this.now())) {
+    for (const { url, pending } of store.duePages(now)) {
       const bookmark = info.get(url);
       if (!bookmark || this.active.has(url)) continue;
       due.push({ url, domain: domainKey(url), ...bookmark, pending });
     }
-    // Pages left needing a browser by an earlier run (or one that had none).
+    // Pages left needing a browser by an earlier run (or one that had none); duePages leaves
+    // them to this loop, which waits out a next attempt set on one, like duePages.
     if (!this.browserUnavailable) {
       for (const page of store.pageStates()) {
         const bookmark = info.get(page.url);
         if (page.status !== "needs_browser" || !bookmark || this.active.has(page.url)) continue;
+        if (page.next_attempt_at !== null && page.next_attempt_at > now) continue;
         due.push({ url: page.url, domain: domainKey(page.url), ...bookmark, browser: true });
       }
     }

@@ -606,13 +606,15 @@ export class IndexStore {
 
   /**
    * The pages to fetch now: pending ones (never fetched) first, then those
-   * whose next attempt (a refresh or a retry) is due at `now`.
+   * whose next attempt (a refresh or a retry) is due at `now`. Not
+   * needs_browser pages: they wait for the browser, not a plain fetch.
    */
   duePages(now: number): { url: string; pending: boolean }[] {
     return this.db
       .prepare(
         `SELECT url, status = 'pending' AS pending FROM pages
-         WHERE status = 'pending' OR (next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
+         WHERE status = 'pending'
+            OR (status != 'needs_browser' AND next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
          ORDER BY pending DESC, url`,
       )
       .all(now)
