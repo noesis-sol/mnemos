@@ -259,12 +259,35 @@ function immediate<T>(db: DatabaseSync, fn: () => T): T {
   }
 }
 
+/** How long a statement waits on another connection's lock before it fails with "database is locked". */
+const BUSY_TIMEOUT_MS = 5_000;
+
+/**
+ * Puts the file in WAL mode. Two processes switching a new file at once:
+ * SQLite answers one of them SQLITE_BUSY straight away, without waiting in
+ * the busy handler, so wait here as the busy handler would, then try again.
+ */
+function useWal(db: DatabaseSync): void {
+  const deadline = Date.now() + BUSY_TIMEOUT_MS;
+  for (;;) {
+    try {
+      db.exec("PRAGMA journal_mode = WAL");
+      return;
+    } catch (err) {
+      // 5: SQLITE_BUSY, in the low byte of its extended codes too.
+      const busy = (((err as { errcode?: number })?.errcode ?? 0) & 0xff) === 5;
+      if (!busy || Date.now() >= deadline) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+}
+
 /** Opens the file, sets it up, and brings its schema to SCHEMA_VERSION; throws if it is unreadable. */
 function openDatabase(file: string): DatabaseSync {
   const db = new DatabaseSync(file);
   try {
-    db.exec("PRAGMA busy_timeout = 5000");
-    db.exec("PRAGMA journal_mode = WAL");
+    db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+    useWal(db);
     db.exec("PRAGMA synchronous = NORMAL");
     // Damage past the first pages only shows when those pages are read, so
     // check them all now rather than fail on every later write. About 80 ms
