@@ -14,6 +14,7 @@ synthetic fixture `test/fixtures/bookmarks.json`, injected through `CHROME_BOOKM
 | build | `scripts/check-fast.sh` | `npm run build` | `tsc`, type-checks `src/` |
 | unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (118 tests, ~1s) |
 | published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
+| embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages (2 tests, ~30s with the download) |
 
 `npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
 files: a new file named `test/<feature>.test.js` runs with no edit to `package.json`. On every
@@ -237,6 +238,32 @@ root entry and that matrix in step.
 - **Untested**: CJK text in predefined CMaps (not recovered: `pdfjs-dist`'s CMap files are not
   installed); a PDF over 200 pages in full; the server with `unpdf` uninstalled.
 - **Tickets**: mnemos-9xs
+
+## Embedder
+
+- **Reached by**: nothing yet; `src/embedder.ts` (`createEmbedder`, `ModelEmbedder`,
+  `FakeEmbedder`) is what the background indexer and `semantic_search` will use (epic
+  mnemos-tc4). The real model, Xenova/multilingual-e5-small (quantized ONNX) at a pinned
+  revision, runs through the optional dependency `@huggingface/transformers`, imported with
+  `import()` on the first `embed()`; downloaded on first use into `<cache dir>/models`.
+  `MNEMOS_EMBEDDER=fake` selects a deterministic word-hashing embedder, for tests only.
+- **Tests**: `test/embedder.test.js` (unit; the library replaced by a stand-in, or its import
+  failed, so no model and no network): the fake is deterministic, 384-dim and normalised, texts
+  sharing words score higher and texts sharing none score 0, in any script; a failing import
+  makes the embedder `unavailable` with the reason and is never retried; with the package made
+  unresolvable by a `--import` resolve hook, the real `import()` fails into `unavailable` and
+  the server still starts and answers over MCP; the first use sets `env.cacheDir` to
+  `<cache dir>/models` and asks for the pinned revision with remote access on, a complete
+  download is loaded as a local model with remote access off, a partial one is completed;
+  `query: ` / `passage: ` prefixes, batches of 32 in order with a yield to the event loop
+  between them, concurrent calls sharing one load; mean pooling over the attention mask; the
+  status going downloading (summed bytes), loading, ready; a failed load retried on the next
+  need after a doubling backoff capped at an hour. `e2e/model.e2e.js` (opt-in, see Suites):
+  the real download lands only in `<cache dir>/models/<model>/<revision>/`, an English query
+  ranks a relevant Greek passage above an unrelated one, and a second embedder loads from the
+  cache with the library's fetch cut.
+- **Untested**: the real model in CI (never: it would need the network); the download's
+  progress events from the real library outside the opt-in e2e.
 
 ## Tool errors over MCP
 

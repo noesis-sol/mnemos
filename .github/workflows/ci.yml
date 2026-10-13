@@ -19,7 +19,12 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      # onnxruntime-node (through the optional @huggingface/transformers)
+      # downloads its CUDA provider on linux/x64 at install; the tests never
+      # load the real model, so skip it.
       - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
       - run: npm test
       # Guard the publishable artifact: pack, unpack, check dist + the bin
       # target, and start the server through the bin.

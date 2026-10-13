@@ -14,3 +14,8 @@ scripts/check-fast.sh
 # files and bin, and starts the server through the bin. Kept out of `npm test`'s discovery.
 printf '%s\n' 'SUITE: published package (e2e)'
 node --test e2e/package.e2e.js
+
+# the real embedding model (e2e, opt-in): downloads about 135 MB from Hugging Face, so it skips
+# itself unless MNEMOS_E2E_MODEL=1. Kept out of `npm test`'s discovery.
+printf '%s\n' 'SUITE: embedding model (e2e, opt-in with MNEMOS_E2E_MODEL=1)'
+node --test e2e/model.e2e.js
