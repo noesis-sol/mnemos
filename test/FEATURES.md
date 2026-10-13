@@ -14,7 +14,7 @@ synthetic fixture `test/fixtures/bookmarks.json`, injected through `CHROME_BOOKM
 | build | `scripts/check-fast.sh` | `npm run build` | `tsc`, type-checks `src/` |
 | unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (118 tests, ~1s) |
 | published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
-| embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages (2 tests, ~30s with the download) |
+| embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages, and checks a text's vector is the same alone and in a batch (3 tests, ~30s with the download) |
 | semantic search acceptance (e2e) | `scripts/check-full.sh` (only with `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (43 bookmarks pointing at a local fixture site that serves what `pages.json` says) with the real model. Titles, with fetching off: waits for them, scores the title queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache. Pages, with fetching on and an installed browser (none fails it in CI, `$CI` set; elsewhere its checks are skipped): waits on `status.page_states` until every page is final and embedded, checks the state of each kind of page, proves from the site's request log that token-like, unsubscribe, `MNEMOS_SKIP_FOLDERS` and redirected-to-a-blocked-host URLs were never requested while their titles are found, scores the full query set (page queries `matched_on: "page"` with the topic in the snippet). Freshness: adds, then deletes and renames, bookmarks while the server runs. Prints a report and appends it to `$GITHUB_STEP_SUMMARY` (9 tests, ~2.5 min with the model in `MNEMOS_E2E_MODEL_CACHE`, most of it the pages fetched one per second) |
 
 `npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
@@ -274,13 +274,17 @@ root entry and that matrix in step.
   the server still starts and answers over MCP; the first use sets `env.cacheDir` to
   `<cache dir>/models` and asks for the pinned revision with remote access on, a complete
   download is loaded as a local model with remote access off, a partial one is completed;
-  `query: ` / `passage: ` prefixes, batches of 32 in order with a yield to the event loop
-  between them, concurrent calls sharing one load; mean pooling over the attention mask; the
+  `query: ` / `passage: ` prefixes, one unpadded text per model run in order with a yield to
+  the event loop between runs, concurrent calls sharing one load; mean pooling over the
+  attention mask; the
   status going downloading (summed bytes), loading, ready; a failed load retried on the next
   need after a doubling backoff capped at an hour. `e2e/model.e2e.js` (opt-in, see Suites):
   the real download lands only in `<cache dir>/models/<model>/<revision>/`, an English query
-  ranks a relevant Greek passage above an unrelated one, and a second embedder loads from the
-  cache with the library's fetch cut.
+  ranks a relevant Greek passage above an unrelated one, a text gets the same vector alone and
+  beside others, and a second embedder loads from the cache with the library's fetch cut.
+  `test/embed-batch-independence.test.js`: with a stand-in model that quantizes over the whole
+  padded batch, as the q8 model does, a text's vector is the same alone and beside longer or
+  shorter texts.
 - **Untested**: the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
 

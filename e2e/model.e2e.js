@@ -76,6 +76,23 @@ test("model: downloads the pinned revision and ranks a Greek passage for an Engl
   console.log(`32-text batch: ${Date.now() - t} ms`);
 });
 
+test("model: a text gets the same vector whatever it is embedded with", { skip, timeout: 120_000 }, async () => {
+  // The q8 model quantizes activations over the whole padded batch; batched, these texts once moved the score by 0.004-0.011.
+  const embedder = new ModelEmbedder({ dir });
+  const query = "how is olive oil made";
+  const passage = "Το ελαιόλαδο παράγεται με σύνθλιψη των ελιών και διαχωρισμό του λαδιού από το νερό";
+  const [q] = await embedder.embed([query], "query");
+  const [p] = await embedder.embed([passage], "passage");
+  const [, q2] = await embedder.embed(["what are the best hiking trails in the Swiss Alps in late autumn", query], "query");
+  const [p2] = await embedder.embed(
+    [passage, "A long English passage about the history of the printing press, movable type and the spread of books in Europe"],
+    "passage",
+  );
+  assert.deepEqual(Array.from(q2), Array.from(q));
+  assert.deepEqual(Array.from(p2), Array.from(p));
+  console.log(`olive oil ${dot(q, p).toFixed(4)}`);
+});
+
 test("model: a second start loads from the cache without the network", { skip, timeout: 120_000 }, async () => {
   // Same module instance the embedder imports, so this cuts its fetch.
   const { env } = await import("@huggingface/transformers");

@@ -11,7 +11,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import {
-  BATCH_SIZE,
   EmbedderUnavailableError,
   FakeEmbedder,
   MODEL_DIM,
@@ -56,9 +55,10 @@ function norm(v) {
  * every pooled vector is the first unit vector.
  */
 function standIn({ failLoads = 0, onLoad } = {}) {
-  const calls = { tokenizer: [], model: [], batches: [], loads: 0 };
+  const calls = { tokenizer: [], model: [], batches: [], options: [], loads: 0 };
   const tokenizer = (texts, options) => {
     calls.batches.push(texts);
+    calls.options.push(options);
     const tokens = 2;
     return {
       input_ids: { data: new BigInt64Array(texts.length * tokens), dims: [texts.length, tokens] },
@@ -280,17 +280,16 @@ test("config: a partial download is completed from the network", async () => {
 
 // --- embedding --------------------------------------------------------------
 
-test("embed: prefixes by kind, batches by 32 in order, one vector per text", async () => {
+test("embed: prefixes by kind, one text per model run, unpadded, in order", async () => {
   const { lib, calls } = standIn();
   const embedder = new ModelEmbedder({ dir: freshDir(), importTransformers: async () => lib });
   const texts = Array.from({ length: 70 }, (_, i) => `t${i}`);
   const vectors = await embedder.embed(texts, "passage");
-  assert.equal(BATCH_SIZE, 32);
   assert.deepEqual(
-    calls.batches.map((b) => b.length),
-    [32, 32, 6],
+    calls.batches,
+    texts.map((t) => [`passage: ${t}`]),
   );
-  assert.deepEqual(calls.batches.flat(), texts.map((t) => `passage: ${t}`));
+  assert.deepEqual(calls.options.at(-1), { padding: false, truncation: true });
   assert.equal(vectors.length, 70);
   for (const v of vectors) {
     assert.equal(v.length, MODEL_DIM);
@@ -301,17 +300,17 @@ test("embed: prefixes by kind, batches by 32 in order, one vector per text", asy
   assert.deepEqual(await embedder.embed([], "query"), []);
 });
 
-test("embed: yields to the event loop between batches", async () => {
+test("embed: yields to the event loop between model runs", async () => {
   const { lib, calls } = standIn();
   const embedder = new ModelEmbedder({ dir: freshDir(), importTransformers: async () => lib });
   await embedder.embed(["warm up"], "query");
   calls.batches.length = 0;
   const seen = [];
-  const pending = embedder.embed(Array.from({ length: 3 * BATCH_SIZE }, (_, i) => `t${i}`), "passage");
+  const pending = embedder.embed(["a", "b", "c"], "passage");
   setImmediate(() => seen.push(calls.batches.length));
   await pending;
   assert.equal(seen.length, 1);
-  assert.ok(seen[0] < 3, `an immediate ran after ${seen[0]} of 3 batches`);
+  assert.ok(seen[0] < 3, `an immediate ran after ${seen[0]} of 3 model runs`);
 });
 
 test("embed: concurrent calls share one load", async () => {

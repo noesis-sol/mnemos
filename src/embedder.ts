@@ -30,8 +30,6 @@ export const MODEL_DTYPE = "q8";
 /** What the library downloads for the model, relative to its revision folder. */
 export const MODEL_FILES = ["config.json", "tokenizer.json", "tokenizer_config.json", "onnx/model_quantized.onnx"];
 
-/** Texts per model run; the embedder yields to the event loop between runs. */
-export const BATCH_SIZE = 32;
 /** The wait after the first failed load, doubled after each further failure up to RETRY_MAX_MS. */
 export const RETRY_MIN_MS = 30_000;
 export const RETRY_MAX_MS = 60 * 60_000;
@@ -218,15 +216,24 @@ export class ModelEmbedder implements Embedder {
     return MODEL_FILES.every((file) => fs.existsSync(path.join(this.modelDir, file)));
   }
 
+  /**
+   * Runs the model on one text at a time, yielding to the event loop between
+   * runs. The q8 model quantizes its activations dynamically, one scale per
+   * tensor (DynamicQuantizeLinear), so in a batch a text's vector depends on
+   * the texts beside it and their padding: scores moved by up to 0.017 with
+   * the batch, against a relevance cutoff tuned at about 0.005. Alone, a text
+   * gets the same vector every time. Measured on 2026-10-13 (Apple M-series,
+   * under load): 2,300 titles take about 6 s against 4 s in batches of 32, and
+   * page chunks are no slower, having no padding.
+   */
   async embed(texts: string[], kind: EmbedKind): Promise<Float32Array[]> {
     if (texts.length === 0) return [];
     const { tokenizer, model } = await this.load();
     const run = this.queue.then(async () => {
-      const prefixed = texts.map((text) => `${kind}: ${text}`);
       const vectors: Float32Array[] = [];
-      for (let i = 0; i < prefixed.length; i += BATCH_SIZE) {
+      for (const [i, text] of texts.entries()) {
         if (i > 0) await yieldToEventLoop();
-        const inputs = tokenizer(prefixed.slice(i, i + BATCH_SIZE), { padding: true, truncation: true });
+        const inputs = tokenizer([`${kind}: ${text}`], { padding: false, truncation: true });
         const { last_hidden_state } = await model(inputs);
         vectors.push(...meanPool(last_hidden_state, inputs.attention_mask));
       }
