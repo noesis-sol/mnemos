@@ -48,6 +48,14 @@ export interface Relevance {
   floor: number;
   margin: number;
   window: number;
+  /**
+   * The number of titles `margin` was calibrated on. The best of N unrelated
+   * titles sits further above the median the more there are (about
+   * σ·√(2 ln N)), so for a library of N titles the margin is scaled by
+   * √(ln N / ln marginTitles); see semantic.ts' relevanceMargin. Absent: the
+   * margin is used as it is.
+   */
+  marginTitles?: number;
 }
 
 /**
@@ -55,9 +63,13 @@ export interface Relevance {
  * 0.75-0.80 (lower for Greek queries), its best unrelated one up to about
  * 0.84, and related ones 0.84-0.89. Calibrated by hand on 2026-10-13 against
  * a real library of 2,300 bookmarks: the queries are listed in
- * test/semantic-search.test.js.
+ * test/semantic-search.test.js. In the 31 bookmarks of e2e/fixtures/semantic
+ * (2026-10-13) the golden queries' bookmarks stand 0.058-0.11 above the
+ * median and the best unrelated title 0.039-0.053: the margin scaled to 31
+ * titles (0.043) keeps the first and at most one of the second, the unscaled
+ * one (0.065) cut 5 of 13.
  */
-export const MODEL_RELEVANCE: Relevance = { floor: 0.8, margin: 0.065, window: 0.04 };
+export const MODEL_RELEVANCE: Relevance = { floor: 0.8, margin: 0.065, window: 0.04, marginTitles: 2300 };
 
 export type EmbedderStatus =
   | { state: "not_started" }

@@ -19,3 +19,14 @@ node --test e2e/package.e2e.js
 # itself unless MNEMOS_E2E_MODEL=1. Kept out of `npm test`'s discovery.
 printf '%s\n' 'SUITE: embedding model (e2e, opt-in with MNEMOS_E2E_MODEL=1)'
 node --test e2e/model.e2e.js
+
+# semantic search acceptance (e2e, opt-in): installs the packed tarball with npm into a clean
+# directory (real dependencies from the registry), downloads the real model unless
+# MNEMOS_E2E_MODEL_CACHE holds it, and scores the golden queries of e2e/fixtures/semantic.
+# Opt-in like the model e2e, with MNEMOS_E2E_MODEL=1; CI runs it in .github/workflows/semantic.yml.
+printf '%s\n' 'SUITE: semantic search acceptance (e2e, opt-in with MNEMOS_E2E_MODEL=1)'
+if [ "${MNEMOS_E2E_MODEL:-}" = 1 ]; then
+	node --test e2e/semantic.e2e.js
+else
+	printf '%s\n' 'skipped: set MNEMOS_E2E_MODEL=1 to run it'
+fi

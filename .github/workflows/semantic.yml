@@ -1,0 +1,55 @@
+name: Semantic search acceptance
+
+# Installs mnemos from its packed tarball like a user, with the real model,
+# and scores semantic_search against golden queries (e2e/semantic.e2e.js).
+# Every push to main and every pull request: ubuntu on Node 22 only, since the
+# repo is private and Actions minutes count (macOS x10, Windows x2). Weekly
+# and by hand: ubuntu, macOS and Windows on Node 22 and 24.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semantic-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  acceptance:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        node-version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[22, 24]' || '[22]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - name: Model revision
+        id: model
+        shell: bash
+        run: echo "revision=$(sed -n 's/^export const MODEL_REVISION = "\(.*\)";.*/\1/p' src/embedder.ts)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/mnemos-model
+          key: mnemos-model-${{ runner.os }}-${{ steps.model.outputs.revision }}
+      # The repo's own dependencies: the test's MCP client, and tsc for
+      # `npm pack`. The installed mnemos gets its own, with nothing skipped.
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: node --test e2e/semantic.e2e.js
+        env:
+          # The test links the model folder of its fresh cache directory here,
+          # so the model downloads once per revision and the cache keeps it.
+          MNEMOS_E2E_MODEL_CACHE: ${{ runner.temp }}/mnemos-model

@@ -15,7 +15,7 @@
  * fetching is disabled.
  */
 
-import type { EmbedderStatus, Embedder } from "./embedder.js";
+import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
 import { bookmarkRows, type Indexer, type IndexScores } from "./indexer.js";
 import * as lib from "./lib.js";
 
@@ -92,6 +92,19 @@ export function snippet(text: string, max: number = SNIPPET_CHARS): string {
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+/**
+ * The margin over the median title for a library of `titles` embedded
+ * titles: the relevance's margin, scaled by √(ln titles / ln marginTitles)
+ * when it says what size it was calibrated on. A small library's best
+ * unrelated title stands less far above its median, and so do its related
+ * ones; an unscaled margin cut those.
+ */
+export function relevanceMargin(relevance: Relevance, titles: number): number {
+  const { margin, marginTitles } = relevance;
+  if (!marginTitles || marginTitles < 2) return margin;
+  return margin * Math.sqrt(Math.log(Math.max(titles, 1)) / Math.log(marginTitles));
+}
+
 /** -Infinity for no values. */
 function median(values: Iterable<number>): number {
   const sorted = Float64Array.from(values).sort();
@@ -124,11 +137,13 @@ export async function semanticSearch(
   const guids = bookmarkRows(entries).map((row) => row.guid);
   const keywordHit = lib.keywordMatcher(words);
 
-  // Semantic scores, or the reason there are none.
+  // Semantic scores, or the reason there are none. A model not started yet
+  // (after a restart there are no titles to embed, so nothing else loads it)
+  // is started by this query, which is answered semantically if it loads in time.
   const embedderStatus = embedder.status();
   let scores: IndexScores | undefined;
   let fallback: string | undefined;
-  if (embedderStatus.state !== "ready") {
+  if (embedderStatus.state !== "ready" && embedderStatus.state !== "not_started") {
     fallback = notReadyReason(embedderStatus);
   } else {
     try {
@@ -138,7 +153,8 @@ export async function semanticSearch(
         fallback = state === "failed" ? `the index could not be built: ${error}` : "the index is not open yet";
       }
     } catch (err) {
-      fallback = message(err);
+      const now = embedder.status();
+      fallback = now.state === "ready" ? message(err) : notReadyReason(now);
     }
   }
 
@@ -159,7 +175,8 @@ export async function semanticSearch(
   if (!scores) {
     hits = candidates.filter((c) => c.keyword);
   } else {
-    const { floor, margin, window } = embedder.relevance;
+    const { floor, window } = embedder.relevance;
+    const margin = relevanceMargin(embedder.relevance, scores.titles.size);
     const best = candidates.reduce((max, c) => Math.max(max, c.score ?? -Infinity), -Infinity);
     const cutoff = Math.max(floor, median(scores.titles.values()) + margin, best - window);
     hits = candidates.filter((c) => c.keyword || (c.score !== null && c.score >= cutoff));
@@ -192,7 +209,7 @@ export async function semanticSearch(
     progress: `titles ${titles_done}/${titles_total || entries.length} · pages ${indexer.embeddedPages()}/${pagesTotal}`,
     search: scores ? "semantic" : "keyword",
     indexing: titlesState.replace("_", " "),
-    embedder: embedderState(embedderStatus),
+    embedder: embedderState(embedder.status()),
     fetching_disabled: fetchingDisabled(ctx.env),
     ...(note ? { note } : {}),
   };

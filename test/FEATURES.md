@@ -15,6 +15,7 @@ synthetic fixture `test/fixtures/bookmarks.json`, injected through `CHROME_BOOKM
 | unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (118 tests, ~1s) |
 | published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
 | embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages (2 tests, ~30s with the download) |
+| semantic search acceptance (e2e) | `scripts/check-full.sh` (only with `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (31 bookmarks pointing at a local fixture site) with the real model, waits for the titles, scores the golden queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache; prints a report and appends it to `$GITHUB_STEP_SUMMARY` (5 tests, ~15s with the model in `MNEMOS_E2E_MODEL_CACHE`, ~2 min with the download) |
 
 `npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
 files: a new file named `test/<feature>.test.js` runs with no edit to `package.json`. On every
@@ -32,6 +33,9 @@ Runner times on macOS, Node 24, three runs each with `node_modules` installed:
 
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm test` and `node --test e2e/package.e2e.js`
 on ubuntu, macOS and Windows with Node 22 and 24.
+`.github/workflows/semantic.yml` runs `node --test e2e/semantic.e2e.js` on ubuntu with Node 22
+for every push to main and pull request, and on ubuntu, macOS and Windows with Node 22 and 24
+weekly and by hand; it caches the model, keyed on its pinned revision.
 `test/node-floor.test.js` keeps `engines.node` (`>=22.13`, for `node:sqlite`), the lockfile's
 root entry and that matrix in step.
 
@@ -265,8 +269,8 @@ root entry and that matrix in step.
   the real download lands only in `<cache dir>/models/<model>/<revision>/`, an English query
   ranks a relevant Greek passage above an unrelated one, and a second embedder loads from the
   cache with the library's fetch cut.
-- **Untested**: the real model in CI (never: it would need the network); the download's
-  progress events from the real library outside the opt-in e2e.
+- **Untested**: the download's progress events from the real library outside the e2e suites
+  (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
 
 ## Background title indexing
 
@@ -301,9 +305,27 @@ root entry and that matrix in step.
   and cuts a long one to 300 characters at a word boundary (or at the limit, never inside a
   surrogate pair); in `embeddingText` the folder path and URL words still follow it, and the
   stored description stays whole.
-- **Untested**: the real model indexing titles (only the opt-in model e2e loads it);
+- **Untested**: the real model indexing titles outside `e2e/semantic.e2e.js` (which also
+  checks a restart reports every title done and embeds none again);
   `checkForChanges()` over MCP (no tool calls it until `semantic_search`).
 - **Tickets**: mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`)
+
+## semantic_search: cutoff by library size, model start
+
+- **Reached by**: `semantic_search` (`src/semantic.ts`). The margin over the median title
+  (`relevanceMargin`) is the embedder's `margin` scaled by √(ln N / ln `marginTitles`) for N
+  embedded titles (the real model's: 0.065 at 2,300 titles, about 0.043 at 31); the fake has no
+  `marginTitles`, so its margin is used as it is. A model that has not started (after a restart
+  no title needs embedding, so nothing else loads it) is started by the query, which waits for
+  it as for any query vector.
+- **Tests**: `test/semantic-margin-size.test.js`: `relevanceMargin` unscaled without
+  `marginTitles`, exact at it, √(ln N / ln `marginTitles`) of it elsewhere, 0 for one title,
+  growing with N; `MODEL_RELEVANCE`'s values; in process, a margin calibrated on a larger
+  library keeps a hit the unscaled one cuts. `test/semantic-model-start.test.js` (in process,
+  a stand-in model `not_started` until its first `embed()`): the query starts it and is
+  answered semantically; a model that cannot load gives keyword results with the reason; one
+  still loading when the query gives up keeps loading and answers the next query.
+  `e2e/semantic.e2e.js` (see Suites): the real model, golden queries and a restart.
 
 ## Tool errors over MCP
 

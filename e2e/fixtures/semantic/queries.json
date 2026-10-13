@@ -1,0 +1,181 @@
+{
+  "about": "Golden title-level queries for e2e/semantic.e2e.js. `expect` names bookmarks by their URL path on the fixture site; the query's rank is the best rank of any of them. A `must` query fails the test unless one is in the top 3; every ranked query counts toward the mean reciprocal rank. `folder` and `limit` are passed to semantic_search. A query with `max_results` and no `expect` is unrelated to the library: it passes if at most that many bookmarks clear the cutoff.",
+  "queries": [
+    {
+      "query": "beginner jogging schedule",
+      "expect": [
+        "/health/couch-to-5k"
+      ],
+      "must": true,
+      "exercises": "synonym: no word shared with \"Couch to 5K running plan\""
+    },
+    {
+      "query": "how to fall asleep more easily",
+      "expect": [
+        "/health/sleep"
+      ],
+      "must": true,
+      "exercises": "paraphrase of \"Sleep hygiene: habits for better rest\""
+    },
+    {
+      "query": "growing vegetables on a balcony",
+      "expect": [
+        "/garden/tomatoes"
+      ],
+      "must": true,
+      "exercises": "paraphrase: one word shared with \"Growing tomatoes in containers\", not every word"
+    },
+    {
+      "query": "software for coordinating several AI assistants",
+      "expect": [
+        "/ai/autogen",
+        "/ai/langgraph"
+      ],
+      "must": true,
+      "exercises": "paraphrase of the agent frameworks' titles"
+    },
+    {
+      "query": "ancient greek grammar",
+      "expect": [
+        "/glossa/archaia"
+      ],
+      "must": true,
+      "exercises": "cross-language: English query, Greek title"
+    },
+    {
+      "query": "best beaches in Crete",
+      "expect": [
+        "/ellada/kriti"
+      ],
+      "must": true,
+      "exercises": "cross-language: English query, Greek title"
+    },
+    {
+      "query": "history of Greek blues music",
+      "expect": [
+        "/mousiki/rebetiko"
+      ],
+      "must": true,
+      "exercises": "cross-language: English query, Greek title (Ρεμπέτικο)"
+    },
+    {
+      "query": "eggplant and minced meat casserole",
+      "expect": [
+        "/kouzina/mousakas"
+      ],
+      "must": false,
+      "exercises": "stretch, cross-language: an English description of a dish titled in Greek; the small model misses it at title level"
+    },
+    {
+      "query": "ναοί και ιερά στο Κιότο",
+      "expect": [
+        "/japan/kyoto-temples"
+      ],
+      "must": true,
+      "exercises": "cross-language: Greek query, English title"
+    },
+    {
+      "query": "πώς να κοιμάμαι καλύτερα",
+      "expect": [
+        "/health/sleep"
+      ],
+      "must": true,
+      "exercises": "cross-language: Greek query, English title, paraphrase"
+    },
+    {
+      "query": "noodle soup restaurants in Tokyo",
+      "expect": [
+        "/japan/tokyo-ramen-shops"
+      ],
+      "must": true,
+      "exercises": "vague title \"Home\": found through its URL words (tokyo ramen shops) and folder"
+    },
+    {
+      "query": "tracking family expenses every month",
+      "expect": [
+        "/finance/monthly-household-budget"
+      ],
+      "must": true,
+      "exercises": "vague title \"Notes\": found through its folder (Finance › Budget) and URL words"
+    },
+    {
+      "query": "nearest neighbour lookup inside postgres",
+      "expect": [
+        "/pgvector-similarity-search"
+      ],
+      "must": true,
+      "exercises": "vague title \"Untitled\": found through its URL words"
+    },
+    {
+      "query": "old 35mm analog photography gear",
+      "expect": [
+        "/p/91c3"
+      ],
+      "must": true,
+      "exercises": "vague title \"Untitled\" and a URL without words: found through its folder path only (Hobbies › Photography › Film cameras)"
+    },
+    {
+      "query": "Hetzner",
+      "expect": [
+        "/devops/cloud-pricing"
+      ],
+      "must": true,
+      "top1": true,
+      "exercises": "exact keyword: a proper noun in the title ranks first (keyword boost)"
+    },
+    {
+      "query": "zettelkasten",
+      "expect": [
+        "/reading/zettelkasten"
+      ],
+      "must": true,
+      "top1": true,
+      "exercises": "exact keyword: a rare word in the title ranks first (keyword boost)"
+    },
+    {
+      "query": "containers",
+      "expect": [
+        "/garden/tomatoes"
+      ],
+      "must": true,
+      "top1": true,
+      "exercises": "exact keyword: a word inside a longer title (\"Growing tomatoes in containers on a patio\") ranks first, above the semantically closer Kubernetes page; without the keyword boost it falls under the cutoff"
+    },
+    {
+      "query": "japanese food",
+      "folder": "Travel",
+      "expect": [
+        "/japan/tokyo-ramen-shops"
+      ],
+      "must": true,
+      "exercises": "folder filter: only bookmarks under Travel come back"
+    },
+    {
+      "query": "cooking recipes",
+      "limit": 2,
+      "expect": [
+        "/recipes/sourdough-loaf",
+        "/recipes/fresh-pasta",
+        "/recipes/carbonara",
+        "/recipes/lava-cake"
+      ],
+      "must": true,
+      "exercises": "limit: at most 2 results, count_above_threshold counts them all"
+    },
+    {
+      "query": "quantum chromodynamics lattice simulation",
+      "max_results": 1,
+      "exercises": "unrelated: few or no results above the cutoff"
+    },
+    {
+      "query": "medieval castle architecture",
+      "max_results": 1,
+      "exercises": "unrelated: few or no results above the cutoff"
+    },
+    {
+      "query": "football transfer news",
+      "max_results": 1,
+      "exercises": "unrelated: few or no results above the cutoff"
+    }
+  ]
+}

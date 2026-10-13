@@ -1,0 +1,478 @@
+{
+   "checksum": "00000000000000000000000000000000",
+   "roots": {
+      "bookmark_bar": {
+         "children": [
+            {
+               "children": [
+                  {
+                     "children": [
+                        {
+                           "children": [
+                              {
+                                 "date_added": "13390086400000000",
+                                 "guid": "e5db885e-558c-420f-8b45-43dbd5d6a76b",
+                                 "id": "2",
+                                 "name": "LangGraph: build stateful multi-actor applications with LLMs",
+                                 "type": "url",
+                                 "url": "{{site}}/ai/langgraph"
+                              },
+                              {
+                                 "date_added": "13390172800000000",
+                                 "guid": "6537089f-cc60-43e3-8c26-4aca19307e59",
+                                 "id": "3",
+                                 "name": "AutoGen: a programming framework for agentic AI and multi-agent conversations",
+                                 "type": "url",
+                                 "url": "{{site}}/ai/autogen"
+                              },
+                              {
+                                 "date_added": "13390259200000000",
+                                 "guid": "50912f37-f107-4c24-88e6-bdd948cd969e",
+                                 "id": "4",
+                                 "name": "Notes",
+                                 "type": "url",
+                                 "url": "{{site}}/p/7d1e"
+                              }
+                           ],
+                           "date_added": "13390259200000000",
+                           "guid": "2a0e5072-6464-403b-8009-7dcd5cff25e7",
+                           "id": "5",
+                           "name": "Agents",
+                           "type": "folder"
+                        },
+                        {
+                           "children": [
+                              {
+                                 "date_added": "13390345600000000",
+                                 "guid": "27280efd-33a2-4888-806c-4f331b742c2a",
+                                 "id": "6",
+                                 "name": "Sentence Transformers documentation: compute text embeddings",
+                                 "type": "url",
+                                 "url": "{{site}}/ai/sentence-transformers"
+                              },
+                              {
+                                 "date_added": "13390432000000000",
+                                 "guid": "8f2c2862-4fc6-4a38-8dba-f9a0840b2df1",
+                                 "id": "7",
+                                 "name": "Untitled",
+                                 "type": "url",
+                                 "url": "{{site}}/pgvector-similarity-search"
+                              }
+                           ],
+                           "date_added": "13390432000000000",
+                           "guid": "190a2e08-4cf7-45a1-8b9d-e6c1d3b5d80a",
+                           "id": "8",
+                           "name": "Embeddings",
+                           "type": "folder"
+                        }
+                     ],
+                     "date_added": "13390432000000000",
+                     "guid": "cd3fe8c9-9fdf-487b-8bc3-7be088513927",
+                     "id": "9",
+                     "name": "AI",
+                     "type": "folder"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13390518400000000",
+                           "guid": "519c53be-965e-4b5b-8ad6-17ebb8631d3c",
+                           "id": "10",
+                           "name": "Pod Lifecycle | Kubernetes documentation",
+                           "type": "url",
+                           "url": "{{site}}/devops/kubernetes-pod-lifecycle"
+                        },
+                        {
+                           "date_added": "13390604800000000",
+                           "guid": "a4046cdf-928f-4e69-8797-3e0251b032c8",
+                           "id": "11",
+                           "name": "Terraform AWS provider: resources and data sources",
+                           "type": "url",
+                           "url": "{{site}}/devops/terraform-aws"
+                        },
+                        {
+                           "date_added": "13390691200000000",
+                           "guid": "1bedaed2-eebd-4836-8902-282258a80192",
+                           "id": "12",
+                           "name": "Grafana dashboards for Prometheus metrics",
+                           "type": "url",
+                           "url": "{{site}}/devops/grafana"
+                        },
+                        {
+                           "date_added": "13390777600000000",
+                           "guid": "512e246a-94af-4315-8aac-bc4b38fc1014",
+                           "id": "13",
+                           "name": "Hetzner Cloud: server prices and plans",
+                           "type": "url",
+                           "url": "{{site}}/devops/cloud-pricing"
+                        }
+                     ],
+                     "date_added": "13390777600000000",
+                     "guid": "424a5c5d-c9b7-43a6-8d16-908cad2b7ab4",
+                     "id": "14",
+                     "name": "DevOps",
+                     "type": "folder"
+                  }
+               ],
+               "date_added": "13390777600000000",
+               "guid": "cf41925b-8d32-4ad4-8588-6f6ee67eb7d0",
+               "id": "15",
+               "name": "Work",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "date_added": "13390864000000000",
+                     "guid": "60778528-b26a-410e-8da2-ebb2feba21a4",
+                     "id": "16",
+                     "name": "Classic sourdough bread: a beginner's recipe for your first loaf",
+                     "type": "url",
+                     "url": "{{site}}/recipes/sourdough-loaf"
+                  },
+                  {
+                     "date_added": "13390950400000000",
+                     "guid": "f2e8aa6a-79e9-45c2-8a83-ec9667588577",
+                     "id": "17",
+                     "name": "How to make fresh egg pasta by hand",
+                     "type": "url",
+                     "url": "{{site}}/recipes/fresh-pasta"
+                  },
+                  {
+                     "date_added": "13391036800000000",
+                     "guid": "ecb0dee5-fb4a-4e56-8a81-2a679a6f7a35",
+                     "id": "18",
+                     "name": "Spaghetti carbonara the Roman way, with guanciale and pecorino",
+                     "type": "url",
+                     "url": "{{site}}/recipes/carbonara"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13391123200000000",
+                           "guid": "c6a118bf-e555-4b47-8e4c-7bca0f5f5dc7",
+                           "id": "19",
+                           "name": "Molten chocolate lava cakes recipe",
+                           "type": "url",
+                           "url": "{{site}}/recipes/lava-cake"
+                        }
+                     ],
+                     "date_added": "13391123200000000",
+                     "guid": "918daaa7-6e70-4cd9-8cbb-43ddd33a538e",
+                     "id": "20",
+                     "name": "Desserts",
+                     "type": "folder"
+                  }
+               ],
+               "date_added": "13391123200000000",
+               "guid": "de2ced66-a99d-4842-87ca-7cc550b3ca78",
+               "id": "21",
+               "name": "Cooking",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "children": [
+                        {
+                           "date_added": "13391209600000000",
+                           "guid": "25261b21-8eb8-44f6-8eeb-e8611aa51a37",
+                           "id": "22",
+                           "name": "Αρχαία ελληνικά: γραμματική και συντακτικό για αρχάριους",
+                           "type": "url",
+                           "url": "{{site}}/glossa/archaia"
+                        },
+                        {
+                           "date_added": "13391296000000000",
+                           "guid": "9dacf515-b80f-4350-88d4-809d612d4c0b",
+                           "id": "23",
+                           "name": "Λεξικό της κοινής νεοελληνικής",
+                           "type": "url",
+                           "url": "{{site}}/glossa/lexiko"
+                        }
+                     ],
+                     "date_added": "13391296000000000",
+                     "guid": "67c3e28f-0630-43f5-8b28-8224ed63bb57",
+                     "id": "24",
+                     "name": "Γλώσσα",
+                     "type": "folder"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13391382400000000",
+                           "guid": "896f388a-90e2-4d42-862d-1331fd26a95a",
+                           "id": "25",
+                           "name": "Ρεμπέτικο: η ιστορία και τα τραγούδια του",
+                           "type": "url",
+                           "url": "{{site}}/mousiki/rebetiko"
+                        }
+                     ],
+                     "date_added": "13391382400000000",
+                     "guid": "ffa99246-48a7-4932-8075-fe6e24b8d727",
+                     "id": "26",
+                     "name": "Μουσική",
+                     "type": "folder"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13391468800000000",
+                           "guid": "b17ec472-01ac-410c-8ce4-8c1e22f893ee",
+                           "id": "27",
+                           "name": "Μουσακάς με μελιτζάνες και κιμά: η κλασική συνταγή",
+                           "type": "url",
+                           "url": "{{site}}/kouzina/mousakas"
+                        }
+                     ],
+                     "date_added": "13391468800000000",
+                     "guid": "67bdd9a0-1007-42a2-84ac-dacb741d46af",
+                     "id": "28",
+                     "name": "Κουζίνα",
+                     "type": "folder"
+                  }
+               ],
+               "date_added": "13391468800000000",
+               "guid": "108f8d40-468a-42bc-8cc2-694641338b68",
+               "id": "29",
+               "name": "Greek",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "children": [
+                        {
+                           "date_added": "13391555200000000",
+                           "guid": "ce737a75-e199-4479-8478-d82da8737427",
+                           "id": "30",
+                           "name": "Kyoto's most beautiful temples and shrines: a visitor's guide",
+                           "type": "url",
+                           "url": "{{site}}/japan/kyoto-temples"
+                        },
+                        {
+                           "date_added": "13391641600000000",
+                           "guid": "7b3eef37-c1d4-4b71-8912-c1c62382e43f",
+                           "id": "31",
+                           "name": "Japan Rail Pass explained: prices, routes and how to use it",
+                           "type": "url",
+                           "url": "{{site}}/japan/rail-pass"
+                        },
+                        {
+                           "date_added": "13391728000000000",
+                           "guid": "a4855374-1d8c-4c70-89c6-4a8db0f3c3e6",
+                           "id": "32",
+                           "name": "Home",
+                           "type": "url",
+                           "url": "{{site}}/japan/tokyo-ramen-shops"
+                        }
+                     ],
+                     "date_added": "13391728000000000",
+                     "guid": "714ff94f-6c5b-4bd8-830d-188bdfe05bdc",
+                     "id": "33",
+                     "name": "Japan",
+                     "type": "folder"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13391814400000000",
+                           "guid": "f5ae5246-e3ed-49b5-8aab-39db2de0cc99",
+                           "id": "34",
+                           "name": "Οι καλύτερες παραλίες της Κρήτης για κολύμπι",
+                           "type": "url",
+                           "url": "{{site}}/ellada/kriti"
+                        }
+                     ],
+                     "date_added": "13391814400000000",
+                     "guid": "051f2ea7-f02c-46b1-887d-aa9c1a0ba716",
+                     "id": "35",
+                     "name": "Ελλάδα",
+                     "type": "folder"
+                  }
+               ],
+               "date_added": "13391814400000000",
+               "guid": "aba1fb64-5ab0-4052-887f-6d9e2fa77db9",
+               "id": "36",
+               "name": "Travel",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "date_added": "13391900800000000",
+                     "guid": "fdfc1e06-4824-4167-8044-1dff43a2eb78",
+                     "id": "37",
+                     "name": "Index fund investing for beginners: how to start",
+                     "type": "url",
+                     "url": "{{site}}/finance/index-funds"
+                  },
+                  {
+                     "date_added": "13391987200000000",
+                     "guid": "2b26f220-0568-45bb-85fa-a3c6f0bfa599",
+                     "id": "38",
+                     "name": "Φορολογική δήλωση 2026: οδηγός βήμα προς βήμα για την υποβολή",
+                     "type": "url",
+                     "url": "{{site}}/finance/dilosi"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13392073600000000",
+                           "guid": "4c7a3ea3-b3a5-401b-8b4d-d00d77907176",
+                           "id": "39",
+                           "name": "Notes",
+                           "type": "url",
+                           "url": "{{site}}/finance/monthly-household-budget"
+                        }
+                     ],
+                     "date_added": "13392073600000000",
+                     "guid": "7f766d38-72e0-4da2-8816-e0c6f67225b8",
+                     "id": "40",
+                     "name": "Budget",
+                     "type": "folder"
+                  }
+               ],
+               "date_added": "13392073600000000",
+               "guid": "467e75b6-c10d-4f59-8306-27785883bdb2",
+               "id": "41",
+               "name": "Finance",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "date_added": "13392160000000000",
+                     "guid": "058687dd-a556-4abd-83df-276ad7222ae8",
+                     "id": "42",
+                     "name": "Couch to 5K: a week-by-week running plan for beginners",
+                     "type": "url",
+                     "url": "{{site}}/health/couch-to-5k"
+                  },
+                  {
+                     "date_added": "13392246400000000",
+                     "guid": "a21f298e-f0bf-45b9-8a5c-e36cf47b068e",
+                     "id": "43",
+                     "name": "Sleep hygiene: habits that help you get a good night's sleep",
+                     "type": "url",
+                     "url": "{{site}}/health/sleep"
+                  }
+               ],
+               "date_added": "13392246400000000",
+               "guid": "c4ebbdd6-4fc2-46be-84e4-cb3eb4ce7003",
+               "id": "44",
+               "name": "Health",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "children": [
+                        {
+                           "date_added": "13392332800000000",
+                           "guid": "c14b0c81-e1cf-4aee-836e-131be0ae9ed5",
+                           "id": "45",
+                           "name": "Aperture and depth of field explained",
+                           "type": "url",
+                           "url": "{{site}}/photo/aperture"
+                        },
+                        {
+                           "children": [
+                              {
+                                 "date_added": "13392419200000000",
+                                 "guid": "eaa46d8a-dde3-4590-8d4a-9b540328533e",
+                                 "id": "46",
+                                 "name": "Untitled",
+                                 "type": "url",
+                                 "url": "{{site}}/p/91c3"
+                              }
+                           ],
+                           "date_added": "13392419200000000",
+                           "guid": "ecda418d-2638-4374-8cc0-ece93802e2e3",
+                           "id": "47",
+                           "name": "Film cameras",
+                           "type": "folder"
+                        }
+                     ],
+                     "date_added": "13392419200000000",
+                     "guid": "019c4746-fa98-4e50-82a8-34fd3424f0a7",
+                     "id": "48",
+                     "name": "Photography",
+                     "type": "folder"
+                  },
+                  {
+                     "children": [
+                        {
+                           "date_added": "13392505600000000",
+                           "guid": "ef333166-6f87-4c42-8722-03a757971050",
+                           "id": "49",
+                           "name": "Growing tomatoes in containers on a patio",
+                           "type": "url",
+                           "url": "{{site}}/garden/tomatoes"
+                        }
+                     ],
+                     "date_added": "13392505600000000",
+                     "guid": "2ac3aecd-4f0c-46d1-8ea8-fd7452a76f05",
+                     "id": "50",
+                     "name": "Gardening",
+                     "type": "folder"
+                  }
+               ],
+               "date_added": "13392505600000000",
+               "guid": "d89ec881-cc2d-4abc-8fca-c8a5d2010538",
+               "id": "51",
+               "name": "Hobbies",
+               "type": "folder"
+            },
+            {
+               "children": [
+                  {
+                     "date_added": "13392592000000000",
+                     "guid": "dc422e40-fc1f-4903-863d-dd9a34b40344",
+                     "id": "52",
+                     "name": "The Zettelkasten method: how to take smart notes",
+                     "type": "url",
+                     "url": "{{site}}/reading/zettelkasten"
+                  }
+               ],
+               "date_added": "13392592000000000",
+               "guid": "18771a25-d9a8-4f7b-87af-41c70562ec2f",
+               "id": "53",
+               "name": "Reading",
+               "type": "folder"
+            }
+         ],
+         "date_added": "13390000000000000",
+         "guid": "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
+         "id": "1",
+         "name": "Bookmarks bar",
+         "type": "folder"
+      },
+      "other": {
+         "children": [
+            {
+               "date_added": "13392678400000000",
+               "guid": "89347bb2-3a64-4278-822a-8cfd5dd8001c",
+               "id": "54",
+               "name": "Home",
+               "type": "url",
+               "url": "{{site}}/dashboard"
+            }
+         ],
+         "date_added": "13390000000000000",
+         "guid": "82b081ec-3dd3-529c-8475-ab6c344590dd",
+         "id": "55",
+         "name": "Other bookmarks",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [],
+         "date_added": "13390000000000000",
+         "guid": "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
+         "id": "56",
+         "name": "Mobile bookmarks",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}
