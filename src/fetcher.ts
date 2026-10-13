@@ -32,6 +32,13 @@
  * browser or no playwright-core, those pages stay needs_browser and
  * browserNote() says so.
  *
+ * A bookmarked PDF is fetched as bytes and its text read with pdf.js (pdf.ts),
+ * then stored like a page's: the same content_hash, chunks and embeddings. A
+ * PDF with no text (a scan; there is no OCR) is no_content for good and never
+ * goes to the browser; an encrypted one is skipped ("encrypted"), and a broken
+ * one failed, with backoff. Without unpdf, PDFs are not fetched (skipped as
+ * not-html).
+ *
  * MNEMOS_FETCH_PAGES=0 turns it off entirely.
  */
 
@@ -41,6 +48,7 @@ import { Extractor, type Extraction } from "./extract.js";
 import { BROWSER_PAGES, HeadlessBrowser, type PageRenderer, type Unavailable } from "./headless.js";
 import { IndexStore, type PageRow } from "./index-store.js";
 import * as lib from "./lib.js";
+import { extractPdfText, pdfSupport, type PdfModule, type PdfTextResult } from "./pdf.js";
 
 /** Fetches in flight at once, over all domains. */
 export const CONCURRENCY = 4;
@@ -111,11 +119,33 @@ export function contentHash(text: string): string {
   return crypto.createHash("sha256").update(text).digest("hex");
 }
 
+/** A page's extracted text or state, or (for a PDF that cannot be read) a reason to skip it. */
+export type PageExtraction = Extraction | { status: "skipped"; reason: string };
+
+/**
+ * What a PDF's text extraction comes to for its page; undefined when it was
+ * aborted (shutdown), and the page stays as it was.
+ */
+export function pdfExtraction(result: PdfTextResult): PageExtraction | undefined {
+  if (result.status === "ok") {
+    return result.text.trim() ? { status: "ok", text: result.text } : { status: "no_content", reason: "no text in the PDF" };
+  }
+  if (result.status === "unavailable") return { status: "skipped", reason: "pdf-unavailable" };
+  switch (result.reason) {
+    case "aborted":
+      return undefined;
+    case "encrypted":
+      return { status: "skipped", reason: "encrypted" };
+    default:
+      return { status: "failed", reason: result.detail ? `pdf ${result.reason}: ${result.detail}` : `pdf ${result.reason}` };
+  }
+}
+
 /** The page row a fetch outcome comes to, given the page's previous fail count. */
 export function pageResult(
   url: string,
   outcome: FetchOutcome,
-  extraction: Extraction | undefined,
+  extraction: PageExtraction | undefined,
   failCount: number,
   now: number,
 ): PageRow {
@@ -136,6 +166,9 @@ export function pageResult(
     case "ok":
       if (!extraction) return failed("no extraction");
       if (extraction.status === "failed") return failed(extraction.reason);
+      if (extraction.status === "skipped") {
+        return { ...base, status: "skipped", fail_count: 0, next_attempt_at: now + REFRESH_MS, reason: extraction.reason, text: null };
+      }
       if (extraction.status === "ok") {
         return {
           ...base,
@@ -209,6 +242,8 @@ export interface FetcherOptions {
   now?: () => number;
   /** Called after a page's outcome is stored (the indexer's pagesChanged), never throwing into the fetcher. */
   onPage?: (url: string) => void;
+  /** Loads the PDF parser; defaults to pdf.ts's import("unpdf"). For tests. */
+  pdfLoad?: () => Promise<PdfModule>;
 }
 
 interface QueueItem {
@@ -246,6 +281,9 @@ export class Fetcher {
   private readonly idlePollMs: number;
   private readonly now: () => number;
   private readonly onPage: (url: string) => void;
+  private readonly pdfLoad: (() => Promise<PdfModule>) | undefined;
+  /** Whether PDFs can be read here: asked of pdf.ts once, on the first fetch. */
+  private pdfReadable: Promise<boolean> | undefined;
 
   private current: FetcherStatus = { state: "not_started", fetched: 0 };
   private store: IndexStore | undefined;
@@ -284,6 +322,7 @@ export class Fetcher {
     this.idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
     this.now = options.now ?? Date.now;
     this.onPage = options.onPage ?? (() => {});
+    this.pdfLoad = options.pdfLoad;
     if (fetchingDisabled(this.env)) this.current = { state: "disabled", fetched: 0 };
   }
 
@@ -607,12 +646,13 @@ export class Fetcher {
   private async fetchOne(item: QueueItem, signal: AbortSignal): Promise<void> {
     let outcome: FetchOutcome;
     try {
+      this.pdfReadable ??= pdfSupport(this.pdfLoad).then((support) => support.available);
       outcome = await this.fetch(item.url, {
         ...this.fetchOptions,
         config: fetchConfig(this.env),
         folder: item.folders[0],
-        // PDFs are skipped as not-html until the PDF text is indexed.
-        acceptPdf: false,
+        // Without a PDF parser, PDFs are skipped as not-html, unread.
+        acceptPdf: await this.pdfReadable,
         signal,
       });
     } catch (err) {
@@ -647,11 +687,11 @@ export class Fetcher {
   }
 
   /** Extracts a fetched or rendered page's text and stores the page's new state. */
-  private async record(item: QueueItem, fetched: FetchOutcome, signal: AbortSignal): Promise<void> {
-    let outcome = fetched;
+  private async record(item: QueueItem, outcome: FetchOutcome, signal: AbortSignal): Promise<void> {
     if (signal.aborted || this.stopped || !this.holding) return; // the page stays as it was
     await yieldToEventLoop();
-    let extraction: Extraction | undefined;
+    let extraction: PageExtraction | undefined;
+    const pdf = outcome.status === "ok" && outcome.kind === "pdf";
     if (outcome.status === "ok" && outcome.kind === "html") {
       try {
         extraction = await this.extractor.extract(outcome.html, outcome.url);
@@ -660,14 +700,17 @@ export class Fetcher {
       }
       await yieldToEventLoop();
     } else if (outcome.status === "ok") {
-      outcome = { status: "skipped", reason: "not-html", url: outcome.url };
+      // On the event loop, a page at a time with a yield between pages; never throws.
+      extraction = pdfExtraction(await extractPdfText(outcome.pdf, { signal, load: this.pdfLoad }));
+      if (!extraction) return; // aborted: the page stays as it was
     }
-    if (this.stopped || !this.holding || !this.store) return;
+    if (signal.aborted || this.stopped || !this.holding || !this.store) return;
     try {
       const previous = this.store.getPage(item.url);
       if (!previous) return; // the bookmark went away meanwhile
       let row = pageResult(item.url, outcome, extraction, previous.fail_count, this.now());
-      if (row.status === "no_content" && !item.browser) {
+      // A PDF with no text is a scan, not a JavaScript shell: the browser would see no more.
+      if (row.status === "no_content" && !item.browser && !pdf) {
         // A JavaScript shell, perhaps: the browser has the last word. The fail
         // count carries over, so a page the browser keeps failing backs off.
         row = { ...row, status: "needs_browser", fail_count: previous.fail_count };

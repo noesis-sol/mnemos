@@ -224,8 +224,13 @@ root entry and that matrix in step.
 
 ## PDF bookmarks
 
-- **Reached by**: nothing in the server yet (the background page fetch, mnemos-tc4.9, will call
-  it); `safeFetch` returns `kind: "pdf"` with the file's bytes for `application/pdf`,
+- **Reached by**: the background page fetcher (`src/fetcher.ts`: `pdfExtraction`; see Background
+  page fetching), which asks for PDFs when `pdfSupport()` (checked once) finds `unpdf`, reads a
+  fetched PDF's text on the event loop with the fetch's abort signal, and stores it as the page's
+  text (same `content_hash`, chunks and embeddings). No text (a scan; no OCR) is `no_content`
+  for good and never goes to the headless browser; encrypted is `skipped` (`encrypted`); invalid
+  or other errors are `failed` with backoff; a parser that fails to load is `skipped`
+  (`pdf-unavailable`). `safeFetch` returns `kind: "pdf"` with the file's bytes for `application/pdf`,
   `application/x-pdf`, or a generic download type at a `.pdf` path, when the body starts with
   `%PDF-` (up to the 5 MB cap; `acceptPdf: false` skips PDFs); `src/pdf.ts`: `extractPdfText`,
   `pdfSupport`, `looksLikePdf`. The parser is pdf.js through `unpdf`, an optionalDependency
@@ -239,9 +244,16 @@ root entry and that matrix in step.
   `application/pdf`, `application/x-pdf` and gzip-encoded PDFs come back as bytes; octet-stream
   only at a `.pdf` path; an HTML body served as a PDF is skipped; the 5 MB cap; the `Accept`
   header with and without `acceptPdf`; a fetched PDF extracts to its text.
+  `test/pdf-pages.test.js`: `pdfExtraction` and `pageResult` for each extraction result; a
+  `Fetcher` with a fake fetch serving built PDFs (text stored with its hash, a textless PDF
+  `no_content` with the browser never launched, encrypted skipped, broken failed with a fail
+  count; with a parser that will not load, `acceptPdf: false` on every fetch and the parser
+  tried once); e2e over MCP against a `node:http` fixture site: a PDF bookmark reaches `ok`, a
+  query with words only in the PDF finds it `matched_on: "page"`, and a textless PDF is
+  `no_content`.
 - **Untested**: CJK text in predefined CMaps (not recovered: `pdfjs-dist`'s CMap files are not
   installed); a PDF over 200 pages in full; the server with `unpdf` uninstalled.
-- **Tickets**: mnemos-9xs
+- **Tickets**: mnemos-9xs; mnemos-wmk (the fetcher reads PDFs)
 
 ## Embedder
 
@@ -335,7 +347,7 @@ root entry and that matrix in step.
   (`extractPage`, `isLoginUrl`, `Extractor`) and `src/extract-worker.ts`. Only the process holding the store's `fetcher` lease (30 s, renewed every 10 s)
   fetches. It adds a pending page per http(s) bookmark URL, applies `MNEMOS_SKIP_DOMAINS` and
   `MNEMOS_SKIP_FOLDERS` to every page (dropping a newly skipped page's text and chunks), and
-  fetches pending and due pages with `safeFetch` (PDFs skipped as not-html for now), pages
+  fetches pending and due pages with `safeFetch` (PDFs read too; see PDF bookmarks), pages
   never fetched before refreshes and retries, newest bookmark first, 4 at a time, one per domain with 1 s between. Readability on a linkedom
   document, in a worker thread (30 s limit per page), gives the text (whitespace collapsed, cut at 200,000 characters), stored in
   `pages.text` (schema version 2) with `final_url`, `content_hash` and `fetched_at`; a password
