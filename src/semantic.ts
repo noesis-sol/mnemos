@@ -12,7 +12,8 @@
  * Until the embedder is ready, or while the index cannot be read, the answer
  * is the keyword hits alone, and the status says why. Every answer carries
  * the status: indexing progress, the embedder's state, whether page
- * fetching is disabled, and how many pages wait for a browser there is none of.
+ * fetching is disabled, how many pages are in each fetch state, and how many
+ * pages wait for a browser there is none of.
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
@@ -244,6 +245,8 @@ export async function semanticSearch(
     indexing: titlesState.replace("_", " "),
     embedder: embedderState(embedder.status()),
     fetching_disabled: fetchingDisabled(ctx.env),
+    // Pages per fetch state: pending, ok, needs_browser, needs_login, no_content, failed, skipped.
+    page_states: indexer.pageCounts(),
     ...(ctx.fetcher ? { fetching: fetcherState(ctx.fetcher) } : {}),
     // "N pages need a browser; set MNEMOS_BROWSER", while there is none to render them with.
     ...(browser ? { browser } : {}),

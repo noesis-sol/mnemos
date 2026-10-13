@@ -1,0 +1,92 @@
+{
+  "about": "What the fixture site of e2e/semantic.e2e.js serves beyond its default page (the bookmark's title in <title> and <h1>, too little text to index: no_content, even in the browser). Keyed by URL path. `kind`: article (an HTML article of `paragraphs`), script (an empty HTML shell whose `paragraphs` a script writes into the page: only the headless browser sees them), login (a sign-in form), csv (a text/csv file), redirect-blocked (a 302 to the blocked server, a host the fetch policy refuses), missing (a 404). `state` is the fetch state the page must end in; `fetched: false` means the server must never be asked for it (the request log is checked).",
+  "pages": {
+    "/p/a1f3": {
+      "kind": "article",
+      "state": "ok",
+      "heading": "Keeping varroa mites under control",
+      "paragraphs": [
+        "Varroa mites are the most serious pest of the honey bee colony. The mites feed on developing brood and on adult bees, and they spread the viruses that cause deformed wings. A hive that is left untreated usually collapses within two or three years.",
+        "Beekeepers count mites with a sugar roll or a sticky board under the hive, then treat when the count passes a threshold. Oxalic acid works best in winter, when the colony has no capped brood; formic acid and thymol strips are used in late summer after the honey harvest.",
+        "Drone brood removal and screened bottom boards slow the mites down between treatments, and resistant queens help over the long run."
+      ]
+    },
+    "/p/b2c4": {
+      "kind": "article",
+      "state": "ok",
+      "heading": "Fixing a flat tyre: how to patch an inner tube",
+      "paragraphs": [
+        "A puncture is the most common repair a cyclist has to make on the road. Take the wheel off the bicycle, open the brake if it holds the tyre, and use two tyre levers to lift one bead of the tyre over the rim so you can pull the inner tube out.",
+        "Pump a little air into the inner tube and listen for the hole, or hold the tube under water and watch for bubbles. Roughen the rubber around the hole with sandpaper, spread a thin layer of vulcanising solution, wait until it is dry to the touch, then press the patch on firmly.",
+        "Before refitting the tube, run your fingers around the inside of the tyre to find the thorn or glass that caused the flat, or the new tube will go down again."
+      ]
+    },
+    "/p/c3d8": {
+      "kind": "article",
+      "state": "ok",
+      "heading": "Picking switches for a mechanical keyboard",
+      "paragraphs": [
+        "The switch under each key decides how a mechanical keyboard feels and sounds. Linear switches move straight down with no bump, tactile switches have a bump you can feel at the actuation point, and clicky switches add a sharp click on top of the bump.",
+        "Spring weight matters as much as the switch type: light springs of around 45 grams suit fast typing, while heavier ones forgive resting fingers. Hot-swappable boards let you try several switches without soldering, and lubricating the stems makes them smoother and quieter.",
+        "Keycap material changes the sound too: thick PBT keycaps sound deeper than thin ABS ones."
+      ]
+    },
+    "/p/d4e2": {
+      "kind": "article",
+      "state": "ok",
+      "heading": "Από το γάλα στην άλμη",
+      "paragraphs": [
+        "Πώς φτιάχνεται η φέτα. Η φέτα φτιάχνεται από πρόβειο γάλα, ή από πρόβειο με λίγο κατσικίσιο. Το γάλα πήζει με πυτιά, το τυρόπηγμα κόβεται σε κομμάτια, στραγγίζει και αλατίζεται. Μετά η φέτα ωριμάζει σε άλμη για τουλάχιστον δύο μήνες."
+      ]
+    },
+    "/p/e5f1": {
+      "kind": "article",
+      "state": "ok",
+      "heading": "Pulling a good shot",
+      "paragraphs": [
+        "How to make espresso. Espresso is made by pushing hot water at high pressure through finely ground coffee. A good espresso shot takes 25 to 30 seconds and has golden crema on top. Grind finer if it runs too fast, coarser if it runs too slow."
+      ]
+    },
+    "/app/shell": {
+      "kind": "script",
+      "state": "ok",
+      "heading": "Life at the lighthouse",
+      "paragraphs": [
+        "Lighthouse keepers lived on remote rocks and headlands to keep the light burning through every night. Each evening the keeper lit the lamp, wound the clockwork that turned the lens, and trimmed the wicks so the beam stayed bright and steady.",
+        "During the night the keepers took turns on watch, writing the weather in the logbook every few hours and sounding the fog signal when the sea mist rolled in. By day they polished the brass, cleaned the soot from the great glass lens and painted the tower.",
+        "Supplies came by boat, and in a winter storm a station could be cut off for weeks. Automation ended the job: the last keepers left their towers in the 1990s."
+      ]
+    },
+    "/members/login": {
+      "kind": "login",
+      "state": "needs_login"
+    },
+    "/events/conference-2019": {
+      "kind": "missing",
+      "state": "failed"
+    },
+    "/files/sales-q3.csv": {
+      "kind": "csv",
+      "state": "skipped"
+    },
+    "/go/wiki": {
+      "kind": "redirect-blocked",
+      "state": "skipped"
+    },
+    "/d/3f9a": {
+      "state": "skipped",
+      "fetched": false,
+      "why": "token-like: ?token=…"
+    },
+    "/mail/unsubscribe": {
+      "state": "skipped",
+      "fetched": false,
+      "why": "token-like: an unsubscribe link"
+    },
+    "/bank/overview": {
+      "state": "skipped",
+      "fetched": false,
+      "why": "in Banking, a MNEMOS_SKIP_FOLDERS folder"
+    }
+  }
+}

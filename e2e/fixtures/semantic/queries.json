@@ -1,5 +1,5 @@
 {
-  "about": "Golden title-level queries for e2e/semantic.e2e.js. `expect` names bookmarks by their URL path on the fixture site; the query's rank is the best rank of any of them. A `must` query fails the test unless one is in the top 3; every ranked query counts toward the mean reciprocal rank. `folder` and `limit` are passed to semantic_search. A query with `max_results` and no `expect` is unrelated to the library: it passes if at most that many bookmarks clear the cutoff.",
+  "about": "Golden queries for e2e/semantic.e2e.js. `expect` names bookmarks by their URL path on the fixture site; the query's rank is the best rank of any of them. A `must` query fails the test unless one is in the top 3; every ranked query counts toward the mean reciprocal rank. `folder` and `limit` are passed to semantic_search. A query with `max_results` and no `expect` is unrelated to the library: it passes if at most that many bookmarks clear the cutoff. A `pages` query matches only a page's body (pages.json), so it is scored once the pages are fetched and embedded, not on titles alone; its expected bookmark must come back `matched_on` that, with a snippet containing `snippet` (ignoring case). A `browser` query's page is built by a script: only the headless browser reads it.",
   "queries": [
     {
       "query": "beginner jogging schedule",
@@ -161,6 +161,73 @@
       ],
       "must": true,
       "exercises": "limit: at most 2 results, count_above_threshold counts them all"
+    },
+    {
+      "query": "treating varroa mites in a beehive",
+      "expect": [
+        "/p/a1f3"
+      ],
+      "must": true,
+      "pages": true,
+      "matched_on": "page",
+      "snippet": "varroa",
+      "exercises": "page body: the title \"Untitled\" says nothing; the page is about varroa mites in beehives"
+    },
+    {
+      "query": "patching an inner tube on a bicycle",
+      "expect": [
+        "/p/b2c4"
+      ],
+      "must": true,
+      "pages": true,
+      "matched_on": "page",
+      "snippet": "inner tube",
+      "exercises": "page body: the title \"Article\" says nothing; the page is about fixing a punctured inner tube"
+    },
+    {
+      "query": "choosing switches for a mechanical keyboard",
+      "expect": [
+        "/p/c3d8"
+      ],
+      "must": true,
+      "pages": true,
+      "matched_on": "page",
+      "snippet": "keyboard",
+      "exercises": "page body: the title \"Interesting\" says nothing; the page is about keyboard switches"
+    },
+    {
+      "query": "how feta cheese is made",
+      "expect": [
+        "/p/d4e2"
+      ],
+      "must": true,
+      "pages": true,
+      "matched_on": "page",
+      "snippet": "φέτα",
+      "exercises": "cross-language through the page: English query, Greek article (how feta is made) titled \"Άρθρο\""
+    },
+    {
+      "query": "πώς να φτιάξω καφέ εσπρέσο",
+      "expect": [
+        "/p/e5f1"
+      ],
+      "must": true,
+      "pages": true,
+      "matched_on": "page",
+      "snippet": "espresso",
+      "exercises": "cross-language through the page: Greek query (how to make espresso coffee), English article titled \"Link\""
+    },
+    {
+      "query": "the daily life of a lighthouse keeper",
+      "expect": [
+        "/app/shell"
+      ],
+      "must": true,
+      "pages": true,
+      "browser": true,
+      "matched_on": "page",
+      "snippet": "lighthouse",
+      "exercises": "headless fallback: the page is an empty shell titled \"App\" whose text a script writes; only the browser reads it"
     },
     {
       "query": "quantum chromodynamics lattice simulation",

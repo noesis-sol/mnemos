@@ -27,7 +27,7 @@ import fs from "node:fs";
 import { domainToUnicode } from "node:url";
 import { chunkEmbeddingText, chunkText } from "./chunk.js";
 import type { Embedder } from "./embedder.js";
-import { IndexStore, type BookmarkRow } from "./index-store.js";
+import { IndexStore, type BookmarkRow, type PageStatus } from "./index-store.js";
 import * as lib from "./lib.js";
 
 /** Titles per embed() call: progress is updated and vectors stored after each. */
@@ -271,6 +271,15 @@ export class Indexer {
       return this.store?.embeddedPageCount() ?? 0;
     } catch {
       return 0;
+    }
+  }
+
+  /** How many pages are in each fetch state ({ ok: 12, failed: 1, … }); empty while the index is not open or cannot be read. */
+  pageCounts(): Partial<Record<PageStatus, number>> {
+    try {
+      return this.store?.pageCounts() ?? {};
+    } catch {
+      return {};
     }
   }
 

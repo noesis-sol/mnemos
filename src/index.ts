@@ -134,8 +134,10 @@ server.registerTool(
       "\"keyword\") and the usual bookmark fields. Only results above a " +
       "relevance cutoff are returned; `count_above_threshold` counts them all, " +
       "and if it exceeds `limit` the list is truncated. `status` reports " +
-      "indexing progress (\"titles x/N · pages y/N\"), the embedding model's " +
-      "state and whether page fetching is disabled; while the model is not " +
+      "indexing progress (\"titles x/N · pages y/N\", y counting pages with " +
+      "embedded text), the embedding model's state, whether page fetching is " +
+      "disabled, and `page_states`, how many pages are in each fetch state " +
+      "(pending, ok, needs_browser, needs_login, no_content, failed, skipped); while the model is not " +
       "ready, results are keyword matches only and `status.note` says why. " +
       "`status.fetching` says what the background page fetcher is doing, and " +
       "`status.browser`, when present, how many pages need a browser to be read " +
