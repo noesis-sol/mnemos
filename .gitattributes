@@ -1,0 +1,7 @@
+# Check every text file out with LF, on every platform: tests compare generated
+# files (src/icon.ts from scripts/build-icons.mjs, which writes LF) byte for
+# byte with the committed ones, and Windows' core.autocrlf would add CRs.
+* text=auto eol=lf
+
+# Inlined into src/icon.ts byte for byte: never convert.
+*.png binary
