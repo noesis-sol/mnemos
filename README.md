@@ -248,12 +248,12 @@ browser you already have — Chrome, Edge, Chromium or Brave, or the one
 `MNEMOS_BROWSER` points to — with a fresh temporary profile (never yours, so
 signed out of everything), and 20 s to load and settle
 ([`src/headless.ts`](src/headless.ts)). Like any browser, it runs the page's
-scripts and loads what they ask for, except images, media and fonts. The page
-itself gets the whole policy below; what it loads gets the host rules (web
-schemes only, no skipped domains, no private addresses, with every connection
-and redirect hop going through a local proxy that checks the host's DNS
-answers), but not the URL rules, since a page's own requests carry the page's
-keys, not yours. mnemos downloads no browser: without one,
+scripts and loads what they ask for, except images, media and fonts. The URL
+it opens gets the whole policy below; the redirects it follows and what the
+page loads get the host rules only (web schemes only, no skipped domains, no
+private addresses, with every connection and redirect hop going through a
+local proxy that checks the host's DNS answers), not the URL rules, so a
+redirect to a token-like or logout URL is followed there. mnemos downloads no browser: without one,
 `semantic_search`'s status says how many pages need one.
 
 Every plain fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
