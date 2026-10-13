@@ -47,7 +47,8 @@ jobs:
           path: ${{ runner.temp }}/mnemos-model
           key: mnemos-model-${{ runner.os }}-${{ steps.model.outputs.revision }}
       # The repo's own dependencies: the test's MCP client, and tsc for
-      # `npm pack`. The installed mnemos gets its own, with nothing skipped.
+      # `npm pack`. The installed mnemos gets its own, and on first start
+      # installs its embedding runtime from the registry (src/runtime.ts).
       - run: npm ci
         env:
           ONNXRUNTIME_NODE_INSTALL: skip

@@ -20,6 +20,10 @@
  *                            render JavaScript-only pages with (headless.ts);
  *                            0 turns rendering off. Default: an installed
  *                            Chrome, Edge, Chromium or Brave
+ *   MNEMOS_INSTALL_RUNTIME   0 keeps mnemos from installing the embedding
+ *                            runtime (@huggingface/transformers) into its cache
+ *                            directory on first use (runtime.ts); semantic_search
+ *                            then matches keywords only
  *
  * All logic lives in lib.ts; this file is MCP wiring only.
  */

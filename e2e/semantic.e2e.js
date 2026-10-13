@@ -4,6 +4,9 @@
 // fixture library with a fresh cache directory and the real model, and checks
 // it in three phases:
 //
+// - Runtime. The package installs without @huggingface/transformers (it would
+//   make a cold `npx` too slow for MCP clients' start timeouts); the first
+//   start installs it into <cache dir>/runtime with npm, from the registry.
 // - Titles. With page fetching off, so the ranking depends on titles alone
 //   and is the same from run to run: waits for the bookmark titles to be
 //   embedded, runs the title queries of e2e/fixtures/semantic/queries.json and
@@ -70,7 +73,7 @@ const IN_CI = Boolean(process.env.CI);
 const TOP_K = 3;
 /** The mean reciprocal rank over every ranked query must reach this. */
 const MIN_MRR = 0.8;
-/** First start: the model download and the title embedding must finish within this. */
+/** First start: the runtime install, the model download and the title embedding must finish within this. */
 const TITLES_TIMEOUT_MS = 10 * 60_000;
 /** Restart: titles must be reported complete within this, with nothing to embed. */
 const RESTART_READY_MS = 30_000;
@@ -543,9 +546,8 @@ test("install: npm installs the packed tarball into a clean directory", { timeou
 
   const pkg = path.join(modules, "mnemos-mcp");
   assert.ok(!fs.lstatSync(pkg).isSymbolicLink(), "mnemos-mcp is installed, not linked");
-  for (const optional of [["@huggingface", "transformers"], ["playwright-core"]]) {
-    assert.ok(fs.existsSync(path.join(modules, ...optional, "package.json")), `the optional ${optional.join("/")} is installed`);
-  }
+  assert.ok(fs.existsSync(path.join(modules, "playwright-core", "package.json")), "the optional playwright-core is installed");
+  assert.ok(!fs.existsSync(path.join(modules, "@huggingface", "transformers")), "the embedding runtime is not installed with the package");
   const link = path.join(modules, ".bin", process.platform === "win32" ? "mnemos-mcp.cmd" : "mnemos-mcp");
   assert.ok(fs.existsSync(link), `${link} exists`);
   if (process.platform === "win32") {
@@ -605,6 +607,10 @@ test("first start: the titles are embedded within the timeout", { timeout: TITLE
   timings["first start: titles complete"] = seconds(Date.now() - started);
   const states = [...new Set(seen.map((s) => s.embedder.replace(/ \d+%$/, "")))];
   timings["first start: embedder states seen"] = states.join(" → ");
+  assert.ok(states.includes("installing"), `the runtime was installed on first start: ${states.join(", ")}`);
+  const runtime = path.join(cacheDir, "runtime", "transformers-4.3.1");
+  assert.ok(fs.existsSync(path.join(runtime, "node_modules", "@huggingface", "transformers", "package.json")), `${runtime} holds the runtime`);
+  timings["runtime"] = mb(treeSize(runtime));
 });
 
 test("golden queries on titles: every must query in the top 3, MRR at or above the minimum", async () => {

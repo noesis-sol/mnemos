@@ -70,6 +70,8 @@ function notReadyReason(status: EmbedderStatus): string {
   switch (status.state) {
     case "unavailable":
       return `the embedding model is unavailable: ${status.reason}`;
+    case "installing":
+      return "the embedding runtime is still installing (first start only)";
     case "downloading":
       return "the embedding model is still downloading (first start only)";
     case "loading":

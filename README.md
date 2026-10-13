@@ -101,8 +101,19 @@ Then ask things like:
 | `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chromium`, `edge`, `brave`, `vivaldi`, `firefox` or `safari` |
 | `CHROME_PROFILE` | `Default` | Profile directory name (e.g. `Profile 3`); for Firefox, the profile's name (default: the one Firefox opens) |
 | `CHROME_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the two above |
+| `MNEMOS_INSTALL_RUNTIME` | — | `0` keeps mnemos from installing its embedding runtime on first start; `semantic_search` then matches keywords only |
 
 For example, `claude mcp add --scope user mnemos -e MNEMOS_BOOKMARKS_BROWSER=firefox -- npx -y mnemos-mcp`.
+
+Semantic search runs a local embedding model through
+[`@huggingface/transformers`](https://www.npmjs.com/package/@huggingface/transformers),
+which with ONNX Runtime weighs about 490 MB. So that `npx` starts mnemos within
+your MCP client's start timeout, it is not part of the package: on first start,
+after connecting, mnemos installs it with npm into its cache directory
+(`~/Library/Caches/mnemos/runtime` on macOS, `%LOCALAPPDATA%\mnemos\Cache\runtime`
+on Windows, `~/.cache/mnemos/runtime` on Linux) and then downloads the model
+(about 120 MB). Until both are there, `semantic_search` matches keywords and
+says why.
 
 > Chrome profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
 > `%LOCALAPPDATA%\Google\Chrome\User Data` (Windows), and
@@ -180,7 +191,7 @@ Every fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
 ## Privacy & design
 
 - **Read-only.** mnemos never modifies your bookmarks file.
-- **Local-only.** No telemetry — data goes from disk to your MCP client and nowhere else. The only network calls fetch the pages you bookmarked (see [Page fetching](#page-fetching); `MNEMOS_FETCH_PAGES=0` stops them) and, once, the embedding model.
+- **Local-only.** No telemetry — data goes from disk to your MCP client and nowhere else. The only network calls fetch the pages you bookmarked (see [Page fetching](#page-fetching); `MNEMOS_FETCH_PAGES=0` stops them) and, once, the embedding runtime (from the npm registry) and model (from Hugging Face).
 - **Zero state.** The file is re-read per call (Firefox's whenever it has changed), so results always reflect what's in your browser right now.
 - **One file.** The whole server is [`src/index.ts`](src/index.ts) — auditable in five minutes.
 

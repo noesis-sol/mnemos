@@ -179,12 +179,12 @@ function blockTransformers(dir) {
   return register;
 }
 
-test("absent: with the package unresolvable, the real import fails and the embedder reports unavailable", () => {
+test("absent: with the package unresolvable and installing off, the real import fails and the embedder reports unavailable", () => {
   const dir = freshDir();
   const register = blockTransformers(path.join(dir, "hook"));
   const script = `
     import { createEmbedder } from ${JSON.stringify(pathToFileURL(path.join(ROOT, "dist", "embedder.js")).href)};
-    const embedder = createEmbedder({ MNEMOS_CACHE_DIR: ${JSON.stringify(dir)} });
+    const embedder = createEmbedder({ MNEMOS_CACHE_DIR: ${JSON.stringify(dir)}, MNEMOS_INSTALL_RUNTIME: "0" });
     const before = embedder.status();
     const error = await embedder.embed(["hello"], "query").then(() => null, (e) => e.name);
     console.log(JSON.stringify({ before, error, after: embedder.status() }));
@@ -199,9 +199,10 @@ test("absent: with the package unresolvable, the real import fails and the embed
   assert.equal(after.state, "unavailable");
   assert.match(after.reason, /blocked by test/);
   assert.equal(fs.existsSync(modelsDir(dir)), false, "nothing written to the models folder");
+  assert.equal(fs.existsSync(path.join(dir, "runtime")), false, "no runtime installed");
 });
 
-test("absent: with the package unresolvable, the server still starts and answers", async () => {
+test("absent: with the package unresolvable and installing off, the server still starts and answers", async () => {
   const dir = freshDir();
   const register = blockTransformers(path.join(dir, "hook"));
   const client = new Client({ name: "mnemos-test", version: "0.0.0" });
@@ -209,7 +210,7 @@ test("absent: with the package unresolvable, the server still starts and answers
     new StdioClientTransport({
       command: process.execPath,
       args: ["--import", pathToFileURL(register).href, path.join(ROOT, "dist", "index.js")],
-      env: { ...process.env, CHROME_BOOKMARKS_PATH: FIXTURE, MNEMOS_CACHE_DIR: dir, MNEMOS_FETCH_PAGES: "0" },
+      env: { ...process.env, CHROME_BOOKMARKS_PATH: FIXTURE, MNEMOS_CACHE_DIR: dir, MNEMOS_FETCH_PAGES: "0", MNEMOS_INSTALL_RUNTIME: "0" },
       stderr: "ignore",
     }),
   );

@@ -2,10 +2,13 @@
  * The embedder: turns texts into 384-dim vectors for semantic search.
  *
  * The real one runs Xenova/multilingual-e5-small (quantized ONNX) through
- * @huggingface/transformers, an optionalDependency imported with import()
- * only when something first needs a vector. If the package is missing or
- * fails to load, mnemos runs on without it: the embedder reports
- * "unavailable" with the reason and callers fall back to keyword search.
+ * @huggingface/transformers, imported with import() only when something first
+ * needs a vector. It is not a dependency: runtime.ts installs it into
+ * <cache dir>/runtime on that first need, after the MCP handshake, so that a
+ * cold `npx -y mnemos-mcp` stays within MCP clients' start timeouts. If it
+ * cannot be installed or fails to load, mnemos runs on without it: the
+ * embedder reports "unavailable" with the reason and callers fall back to
+ * keyword search.
  *
  * The model is downloaded on first use into <cache dir>/models, at a pinned
  * revision, through the library's own file cache (env.cacheDir). The library
@@ -20,6 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { cacheDir, normalize } from "./index-store.js";
+import { loadTransformers, RuntimeInstallError, TRANSFORMERS } from "./runtime.js";
 
 export const MODEL_ID = "Xenova/multilingual-e5-small";
 /** The model repository's commit, as of 2026-10-13. A new one re-embeds every index. */
@@ -71,6 +75,8 @@ export const MODEL_RELEVANCE: Relevance = { floor: 0.8, margin: 0.065, window: 0
 
 export type EmbedderStatus =
   | { state: "not_started" }
+  /** npm is installing the embedding runtime into <cache dir>/runtime (first start only). */
+  | { state: "installing" }
   /** Bytes so far and expected, summed over the model's files, when the library reports them. */
   | { state: "downloading"; loaded?: number; total?: number }
   | { state: "loading" }
@@ -123,14 +129,17 @@ type Model = ((inputs: Record<string, unknown>) => Promise<{ last_hidden_state: 
   dispose?: () => Promise<unknown>;
 };
 
-/** A variable, so tsc neither resolves the optional package nor needs its types. */
-const TRANSFORMERS = "@huggingface/transformers";
-
 export interface ModelEmbedderOptions {
   /** mnemos's cache directory; the model goes into its models folder. Defaults to cacheDir(). */
   dir?: string;
-  /** Loads the library; tests pass one that fails, or a stand-in. */
-  importTransformers?: () => Promise<Transformers>;
+  /**
+   * Loads the library, calling `onInstall` if it has to be installed first;
+   * tests pass one that fails, or a stand-in. Defaults to runtime.ts'
+   * loadTransformers.
+   */
+  importTransformers?: (onInstall: () => void) => Promise<Transformers>;
+  /** false: never install the runtime (MNEMOS_INSTALL_RUNTIME=0). */
+  installRuntime?: boolean;
   /** Clock in ms since the epoch, for tests. */
   now?: () => number;
 }
@@ -192,7 +201,7 @@ export class ModelEmbedder implements Embedder {
   readonly modelDir: string;
 
   private readonly models: string;
-  private readonly importTransformers: () => Promise<Transformers>;
+  private readonly importTransformers: (onInstall: () => void) => Promise<Transformers>;
   private readonly now: () => number;
   private current: EmbedderStatus = { state: "not_started" };
   private loading: Promise<{ tokenizer: Tokenizer; model: Model }> | undefined;
@@ -203,7 +212,11 @@ export class ModelEmbedder implements Embedder {
   constructor(options: ModelEmbedderOptions = {}) {
     this.models = modelsDir(options.dir);
     this.modelDir = path.join(this.models, ...MODEL_ID.split("/"), MODEL_REVISION);
-    this.importTransformers = options.importTransformers ?? (() => import(TRANSFORMERS));
+    const dir = options.dir;
+    const install = options.installRuntime;
+    this.importTransformers =
+      options.importTransformers ??
+      ((onInstall) => loadTransformers({ dir, install, onInstall }) as Promise<Transformers>);
     this.now = options.now ?? Date.now;
   }
 
@@ -246,7 +259,8 @@ export class ModelEmbedder implements Embedder {
   /**
    * Loads the model once; concurrent callers share the attempt. After a
    * failure, calls before retry_at reject at once and the first call after
-   * it tries again. A library that cannot be imported is never retried.
+   * it tries again, and so does a runtime npm failed to install. A library
+   * that cannot be imported is never retried.
    */
   private load(): Promise<{ tokenizer: Tokenizer; model: Model }> {
     if (this.loading) return this.loading;
@@ -265,8 +279,13 @@ export class ModelEmbedder implements Embedder {
     this.current = { state: "loading" };
     let transformers: Transformers;
     try {
-      transformers = await this.importTransformers();
+      transformers = await this.importTransformers(() => {
+        this.current = { state: "installing" };
+      });
     } catch (err) {
+      if (err instanceof RuntimeInstallError) {
+        throw this.failed(`${TRANSFORMERS} could not be installed: ${message(err)}`);
+      }
       const reason = `${TRANSFORMERS} could not be loaded: ${message(err)}`;
       this.current = { state: "unavailable", reason };
       throw new EmbedderUnavailableError(reason);
@@ -288,12 +307,16 @@ export class ModelEmbedder implements Embedder {
       this.failures = 0;
       return { tokenizer, model };
     } catch (err) {
-      const wait = Math.min(RETRY_MIN_MS * 2 ** this.failures, RETRY_MAX_MS);
-      this.failures++;
-      const reason = `the model could not be loaded: ${message(err)}`;
-      this.current = { state: "unavailable", reason, retry_at: this.now() + wait };
-      throw new EmbedderUnavailableError(reason);
+      throw this.failed(`the model could not be loaded: ${message(err)}`);
     }
+  }
+
+  /** Unavailable until a doubling backoff has passed; the error to throw. */
+  private failed(reason: string): EmbedderUnavailableError {
+    const wait = Math.min(RETRY_MIN_MS * 2 ** this.failures, RETRY_MAX_MS);
+    this.failures++;
+    this.current = { state: "unavailable", reason, retry_at: this.now() + wait };
+    return new EmbedderUnavailableError(reason);
   }
 
   /** Sums the per-file byte counts the library reports; "loading" once every file is done. */
@@ -404,7 +427,8 @@ export function fakeVector(text: string, dim: number = MODEL_DIM): Float32Array 
 /**
  * The fake when MNEMOS_EMBEDDER=fake (tests only, with MNEMOS_FAKE_EMBED_GATE,
  * MNEMOS_FAKE_EMBED_LOG and MNEMOS_FAKE_EMBED_UNAVAILABLE), else the real
- * model, not yet loaded.
+ * model, not yet loaded; MNEMOS_INSTALL_RUNTIME=0 keeps it from installing
+ * its runtime.
  */
 export function createEmbedder(
   env: NodeJS.ProcessEnv = process.env,
@@ -417,5 +441,5 @@ export function createEmbedder(
       unavailable: env.MNEMOS_FAKE_EMBED_UNAVAILABLE || undefined,
     });
   }
-  return new ModelEmbedder({ dir: cacheDir(env), ...options });
+  return new ModelEmbedder({ dir: cacheDir(env), installRuntime: env.MNEMOS_INSTALL_RUNTIME !== "0", ...options });
 }

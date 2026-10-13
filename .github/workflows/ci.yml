@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      # onnxruntime-node (through the optional @huggingface/transformers)
+      # onnxruntime-node (through the devDependency @huggingface/transformers)
       # downloads its CUDA provider on linux/x64 at install; the tests never
       # load the real model, so skip it.
       - run: npm ci

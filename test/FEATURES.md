@@ -260,8 +260,12 @@ root entry and that matrix in step.
 - **Reached by**: the background title indexer (see Background title indexing);
   `src/embedder.ts` (`createEmbedder`, `ModelEmbedder`, `FakeEmbedder`), which
   `semantic_search` will use too (epic mnemos-tc4). The real model, Xenova/multilingual-e5-small (quantized ONNX) at a pinned
-  revision, runs through the optional dependency `@huggingface/transformers`, imported with
-  `import()` on the first `embed()`; downloaded on first use into `<cache dir>/models`.
+  revision, runs through `@huggingface/transformers`, imported with `import()` on the first
+  `embed()`: from beside mnemos (the devDependency, in a checkout), else from
+  `<cache dir>/runtime/transformers-<version>/`, which `src/runtime.ts` first installs with npm
+  (scripts skipped) unless `MNEMOS_INSTALL_RUNTIME=0`; it is no dependency of the package, so a
+  cold `npx` stays within MCP clients' start timeouts. The model is downloaded on first use
+  into `<cache dir>/models`.
   `MNEMOS_EMBEDDER=fake` selects a deterministic word-hashing embedder, for tests only;
   with it, `MNEMOS_FAKE_EMBED_GATE` (embed waits until that file exists) and
   `MNEMOS_FAKE_EMBED_LOG` (each embedded text appended as a JSON line) let tests over MCP
@@ -285,7 +289,19 @@ root entry and that matrix in step.
   `test/embed-batch-independence.test.js`: with a stand-in model that quantizes over the whole
   padded batch, as the q8 model does, a text's vector is the same alone and beside longer or
   shorter texts.
-- **Untested**: the download's progress events from the real library outside the e2e suites
+  `test/embedding-runtime.test.js` (the real npm, offline, installing a stand-in package from a
+  `file:` spec): the package has no `@huggingface/transformers` dependency and its devDependency
+  is the version installed; a missing library is installed into `<cache dir>/runtime` and
+  imported from there, and a later load runs no npm; one beside mnemos is used and nothing is
+  installed; with installing off the import's error is kept; an npm failure is a
+  `RuntimeInstallError` leaving no temporary folder; two installs at once share one runtime
+  folder; a dead process's temporary folder and other versions' runtimes are removed; the
+  embedder reports `installing` then `ready`, and a failed install is retried after the
+  backoff; which npm runs, and without npx's `npm_*` variables. `e2e/semantic.e2e.js`: the
+  packed tarball installs without the library, and the first start installs it from the
+  registry.
+- **Untested**: the install's 15-minute timeout; npm on the PATH as the last resort (only the
+  choice of it is unit-tested); the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
 
 ## Background title indexing
