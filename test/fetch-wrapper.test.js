@@ -99,6 +99,8 @@ const seen = [];
 let plain; // http on 127.0.0.1
 let secure; // https on 127.0.0.1, self-signed fixture certificate
 let closedPort; // nothing listens here
+let silent; // answers plain http, but never answers a TLS ClientHello
+let T;
 let P;
 let S;
 
@@ -110,6 +112,19 @@ before(async () => {
   secure = https.createServer({ cert, key }, routes("https", seen));
   P = await listen(plain);
   S = await listen(secure);
+  // Peeks at the first byte: 0x16 starts a TLS handshake, which is left
+  // hanging, as by a firewall that drops port 443; anything else is handed to
+  // the plain http server.
+  silent = net.createServer((socket) => {
+    socket.once("data", (chunk) => {
+      if (chunk[0] === 0x16) return;
+      socket.pause();
+      socket.unshift(chunk);
+      plain.emit("connection", socket);
+      socket.resume();
+    });
+  });
+  T = await listen(silent);
   const probe = net.createServer();
   closedPort = await listen(probe);
   await new Promise((resolve) => probe.close(resolve));
@@ -120,6 +135,7 @@ after(() => {
   secure.closeAllConnections();
   plain.close();
   secure.close();
+  silent.close();
 });
 
 const viaPlain = (path) => `http://127.0.0.1:${P}${path}`;
@@ -155,6 +171,24 @@ test("http fallback: an untrusted (self-signed) certificate falls back to http",
   assert.equal(r.reason, "connection");
   assert.equal(r.url, viaSecure("/page"), "the last attempt was the http fallback");
   assert.equal(seen.length, before, "the TLS server served nothing");
+});
+
+test("http fallback: an https attempt that hangs in the handshake falls back to http", async () => {
+  const started = Date.now();
+  const r = await f.safeFetch(`http://127.0.0.1:${T}/page`, {
+    resolve,
+    timeoutMs: 5_000,
+    upgradeConnectTimeoutMs: 200,
+  });
+  assert.equal(r.status, "ok");
+  assert.equal(r.url, `http://127.0.0.1:${T}/page`);
+  assert.equal(r.html, "<title>http</title>");
+  assert.ok(Date.now() - started < 4_000, "fell back well before the page timeout");
+});
+
+test("the https handshake limit is 5 s, inside the 15 s page timeout", () => {
+  assert.equal(f.UPGRADE_CONNECT_TIMEOUT_MS, 5_000);
+  assert.ok(f.UPGRADE_CONNECT_TIMEOUT_MS < f.FETCH_TIMEOUT_MS);
 });
 
 test("http fallback: a refusing port is tried over https, then http, then reported", async () => {

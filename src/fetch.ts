@@ -20,6 +20,7 @@ import dns from "node:dns";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
+import tls from "node:tls";
 import zlib from "node:zlib";
 import { domainToASCII } from "node:url";
 import type { Readable } from "node:stream";
@@ -63,6 +64,13 @@ export type FetchOutcome =
 export const FETCH_TIMEOUT_MS = 15_000;
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 export const MAX_REDIRECTS = 5;
+/**
+ * How long the https attempt for an http:// bookmark may take to connect and
+ * finish its TLS handshake. A site whose port 443 silently drops packets
+ * would otherwise use up the whole page timeout and never get its http
+ * fallback; past this, the attempt counts as a connection failure.
+ */
+export const UPGRADE_CONNECT_TIMEOUT_MS = 5_000;
 
 /** A current desktop Chrome User-Agent (Chrome's reduced UA format). */
 export const USER_AGENT =
@@ -415,7 +423,12 @@ export interface FetchOptions {
   resolve?: Resolver;
   timeoutMs?: number;
   maxBytes?: number;
-  /** Extra trusted CA certificates for https (an intranet CA, or a test's). */
+  /** Overrides UPGRADE_CONNECT_TIMEOUT_MS. */
+  upgradeConnectTimeoutMs?: number;
+  /**
+   * Extra trusted CA certificates for https (an intranet CA, or a test's),
+   * added to Node's bundled roots rather than replacing them.
+   */
   ca?: string | Buffer | Array<string | Buffer>;
 }
 
@@ -436,6 +449,7 @@ async function request(
   url: URL,
   opts: FetchOptions & { config: FetchConfig; resolve: Resolver; signal: AbortSignal },
   allowAs: URL = url,
+  connectTimeoutMs?: number,
 ): Promise<Response> {
   const resolution = await resolveChecked(url, allowAs, opts.config, opts.resolve);
   if (!resolution.ok) {
@@ -460,11 +474,22 @@ async function request(
           "Accept-Language": acceptLanguage(),
           "Accept-Encoding": "gzip, deflate, br",
         },
-        ...(url.protocol === "https:" && opts.ca ? { ca: opts.ca } : {}),
+        ...(url.protocol === "https:" && opts.ca
+          ? { ca: [...tls.rootCertificates, ...([] as Array<string | Buffer>).concat(opts.ca)] }
+          : {}),
       },
       (res) => resolve({ res, url }),
     );
     req.on("error", reject);
+    if (connectTimeoutMs !== undefined) {
+      const timer = setTimeout(() => {
+        req.destroy(Object.assign(new Error("connect or TLS handshake timed out"), { code: "ECONNTIMEOUT" }));
+      }, connectTimeoutMs);
+      req.on("socket", (socket) => {
+        socket.once(url.protocol === "https:" ? "secureConnect" : "connect", () => clearTimeout(timer));
+      });
+      req.on("close", () => clearTimeout(timer));
+    }
     req.end();
   });
 }
@@ -543,8 +568,8 @@ function isTimeout(e: unknown, signal: AbortSignal): boolean {
  * what happened as data; it never throws for network or policy reasons.
  *
  * An http:// URL is tried as https:// first, falling back to the original
- * only when that attempt fails to connect or to set up TLS — never on an HTTP
- * status. Redirects are followed by hand, at most MAX_REDIRECTS hops, each
+ * only when that attempt fails to connect or to set up TLS, or takes longer
+ * than UPGRADE_CONNECT_TIMEOUT_MS to — never on an HTTP status. Redirects are followed by hand, at most MAX_REDIRECTS hops, each
  * checked against the same rules as the first URL and taken as given (a
  * redirect to http:// is not upgraded). One timeout covers the whole page:
  * attempts, redirects and the body.
@@ -568,7 +593,12 @@ export async function safeFetch(input: string, options: FetchOptions = {}): Prom
       upgraded.protocol = "https:";
       current = upgraded.href;
       try {
-        response = await request(upgraded, opts, url);
+        response = await request(
+          upgraded,
+          opts,
+          url,
+          options.upgradeConnectTimeoutMs ?? UPGRADE_CONNECT_TIMEOUT_MS,
+        );
       } catch (e) {
         if (e instanceof StopError || isTimeout(e, controller.signal)) throw e;
         current = url.href;

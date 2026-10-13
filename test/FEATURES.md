@@ -206,7 +206,8 @@ root entry and that matrix in step.
   checked too, a lookup failure. `test/fetch-wrapper.test.js` (unit against local `node:http`
   and `node:https` servers on `127.0.0.1`, allowed through `MNEMOS_FETCH_ALLOW_HOSTS`; TLS from
   `test/fixtures/tls/`, a self-signed certificate valid until 2126): https first, http fallback
-  from a plain port, an untrusted certificate and a refusing port, no fallback on 4xx/5xx and
+  from a plain port, an untrusted certificate, a handshake that hangs past the 5 s upgrade limit and
+  a refusing port, no fallback on 4xx/5xx and
   no downgrade of `https://`; a name connected through the checked address; redirects up to
   five, the sixth refused, hops into private addresses, names resolving to them, token URLs,
   other schemes and skipped domains stopped without being requested; the 5 MB cap by
