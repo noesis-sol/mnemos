@@ -246,13 +246,17 @@ The index stays fresh on its own:
 A page that needs JavaScript to show anything is loaded again in a headless
 browser you already have — Chrome, Edge, Chromium or Brave, or the one
 `MNEMOS_BROWSER` points to — with a fresh temporary profile (never yours, so
-signed out of everything), no images, media or fonts, and the same policy as
-below for every request it makes ([`src/headless.ts`](src/headless.ts)). Like
-any browser, it runs the page's scripts and makes the requests they make.
-mnemos downloads no browser: without one, `semantic_search`'s status says how
-many pages need one.
+signed out of everything), and 20 s to load and settle
+([`src/headless.ts`](src/headless.ts)). Like any browser, it runs the page's
+scripts and loads what they ask for, except images, media and fonts. The page
+itself gets the whole policy below; what it loads gets the host rules (web
+schemes only, no skipped domains, no private addresses, with every connection
+and redirect hop going through a local proxy that checks the host's DNS
+answers), but not the URL rules, since a page's own requests carry the page's
+keys, not yours. mnemos downloads no browser: without one,
+`semantic_search`'s status says how many pages need one.
 
-Every fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
+Every plain fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
 
 - **Web pages only.** `http:` and `https:` URLs; `http://` is tried as
   `https://` first and falls back to plain http only when the TLS handshake or
