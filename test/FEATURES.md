@@ -187,6 +187,35 @@ root entry and that matrix in step.
   Linux.
 - **Tickets**: mnemos-xp1
 
+## Page fetch policy and safe fetch
+
+- **Reached by**: nothing in the server yet (the background page fetch, mnemos-tc4.9, will call
+  it); `src/fetch.ts`: `checkUrl`, `isBlockedAddress`, `isTokenLike`, `fetchConfig`
+  (`MNEMOS_SKIP_DOMAINS`, `MNEMOS_SKIP_FOLDERS`, `MNEMOS_FETCH_ALLOW_HOSTS`), `acceptLanguage`,
+  `safeFetch`.
+- **Tests**: `test/fetch-policy.test.js` (unit, table-driven, no network): non-web schemes;
+  `isBlockedAddress` over IPv4 private, loopback, link-local, CGNAT and unspecified ranges, IPv6
+  loopback, unique-local, link-local (with zone id) and site-local, IPv4-mapped (dotted and hex),
+  IPv4-compatible, NAT64 and 6to4; private literals in URLs including `127.1`, `2130706433`,
+  `0x7f.0.0.1` and bracketed IPv6, and `.local` / `.localhost` names; token-like query names
+  (split on punctuation and camelCase) and path segments, plus credentials in the URL, and
+  look-alikes that pass; skipped domains with subdomains, trailing dots and IDN; skipped folders
+  (whole word, blanks ignored); allow-list parsing and per-port matching; the User-Agent shape and
+  `Accept-Language`; `safeFetch` with injected resolvers: policy skips before any lookup, a
+  public name resolving to `127.0.0.1`, one private answer among public ones, the https upgrade
+  checked too, a lookup failure. `test/fetch-wrapper.test.js` (unit against local `node:http`
+  and `node:https` servers on `127.0.0.1`, allowed through `MNEMOS_FETCH_ALLOW_HOSTS`; TLS from
+  `test/fixtures/tls/`, a self-signed certificate valid until 2126): https first, http fallback
+  from a plain port, an untrusted certificate and a refusing port, no fallback on 4xx/5xx and
+  no downgrade of `https://`; a name connected through the checked address; redirects up to
+  five, the sixth refused, hops into private addresses, names resolving to them, token URLs,
+  other schemes and skipped domains stopped without being requested; the 5 MB cap by
+  `Content-Length`, chunked and decompressed, with exactly 5 MB still fetched; timeouts on
+  headers and body; non-HTML skipped; XHTML, charset and gzip decoding; 403/429 refused once
+  with `Retry-After`; the request headers.
+- **Untested**: Brotli and deflate bodies; IPv6 connections (the servers listen on IPv4 only).
+- **Tickets**: mnemos-tc4.8
+
 ## Tool errors over MCP
 
 - **Reached by**: any tool call; `safely()` in `src/index.ts` turns a thrown error into an

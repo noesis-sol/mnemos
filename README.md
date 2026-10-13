@@ -129,6 +129,35 @@ For example, `claude mcp add --scope user mnemos -e MNEMOS_BOOKMARKS_BROWSER=fir
 If the profile has no bookmarks file, mnemos tells the assistant which profiles
 do — no cryptic tracebacks.
 
+### Page fetching
+
+Semantic search over page contents (in progress) fetches the pages you
+bookmarked, under a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
+
+- **Web pages only.** `http:` and `https:` URLs; `http://` is tried as
+  `https://` first and falls back to plain http only when the TLS handshake or
+  the connection fails, never on an HTTP error.
+- **Never your network.** Loopback, private, link-local and unspecified
+  addresses (IPv4 and IPv6, IPv4-mapped included) and `.local` / `.localhost`
+  names are refused, checked on every address a name resolves to, and the
+  connection goes to the address that was checked.
+- **No secrets or actions.** URLs whose query carries a token, key, signature,
+  code, session, password or secret, or whose path looks like unsubscribe,
+  logout, delete, confirm, verify, magic-link or activate, are never fetched.
+- **Bounded.** At most 5 redirects, each re-checked against these rules; 15 s
+  and 5 MB per page; HTML (`text/html`, `application/xhtml+xml`) only.
+- **Polite.** It sends a browser User-Agent and your locale's
+  `Accept-Language`, because it fetches what you saved the way your browser
+  would. For the same reason it does **not** read `robots.txt`: mnemos does not
+  crawl or follow links, it opens your own bookmarks one at a time. A `403` or
+  `429` is taken as a refusal and not retried until a backoff allows it.
+
+| Environment variable | Purpose |
+|----------------------|---------|
+| `MNEMOS_SKIP_DOMAINS` | Comma-separated domains never fetched; each also covers its subdomains |
+| `MNEMOS_SKIP_FOLDERS` | Comma-separated folder names (whole-word, like `list_folder_contents`) whose pages are never fetched; their titles are still searchable |
+| `MNEMOS_FETCH_ALLOW_HOSTS` | Comma-separated `host` or `host:port` exempt from the private-address block, e.g. an intranet wiki |
+
 ## Privacy & design
 
 - **Read-only.** mnemos never modifies your bookmarks file.
