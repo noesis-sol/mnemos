@@ -302,7 +302,8 @@ root entry and that matrix in step.
   backoff; which npm runs, and without npx's `npm_*` variables.
   `test/runtime-prune.test.js` (runtime folders laid out by hand, no npm): a load from the cache
   touches its folder's marker; other versions' folders are removed once their marker (or, from
-  before markers, their loader) is 30 days old and kept before, folders not named
+  before markers, their loader) is 30 days old and kept before, a folder installed long ago
+  but loaded recently is kept by its marker, folders not named
   `transformers-*` and the one loaded are kept however old; a half-done removal is finished on
   the next load; a library beside mnemos leaves the cache as it is. `e2e/semantic.e2e.js`: the
   packed tarball installs without the library, and the first start installs it from the

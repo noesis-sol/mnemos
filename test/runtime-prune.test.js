@@ -31,8 +31,11 @@ function installedDir() {
   return dir;
 }
 
-/** Another runtime folder, with its marker (or, with marker false, only its loader) last written `age` ago. */
-function otherRuntime(dir, name, age, { marker = true } = {}) {
+/**
+ * Another runtime folder, installed `age` ago, with its marker (none with marker
+ * false) last touched `used` ago.
+ */
+function otherRuntime(dir, name, age, { marker = true, used = age } = {}) {
   const folder = path.join(runtimeDir(dir), name);
   fs.mkdirSync(path.join(folder, "node_modules", ...TRANSFORMERS.split("/")), { recursive: true });
   fs.writeFileSync(path.join(folder, "load.mjs"), "export {};\n");
@@ -43,6 +46,10 @@ function otherRuntime(dir, name, age, { marker = true } = {}) {
   }
   const when = new Date(Date.now() - age);
   for (const file of [...files, folder]) fs.utimesSync(file, when, when);
+  if (marker) {
+    const touched = new Date(Date.now() - used);
+    fs.utimesSync(path.join(folder, LAST_USED), touched, touched);
+  }
   return folder;
 }
 
@@ -73,13 +80,17 @@ test("prune: another version's runtime unused for 30 days is removed, one used s
   const runtime = runtimeDir(dir);
   otherRuntime(dir, "transformers-4.0.0", UNUSED_RUNTIME_MS + DAY);
   otherRuntime(dir, "transformers-4.1.0", UNUSED_RUNTIME_MS - DAY);
+  // Installed long ago, but another mnemos loaded it yesterday: its marker counts, not its loader.
+  otherRuntime(dir, "transformers-4.1.1", 3 * UNUSED_RUNTIME_MS, { used: DAY });
+  // Loaded since its install, but not for 30 days.
+  otherRuntime(dir, "transformers-4.1.2", 3 * UNUSED_RUNTIME_MS, { used: UNUSED_RUNTIME_MS + DAY });
   // Installed before markers: its loader's age counts.
   otherRuntime(dir, "transformers-4.2.0", UNUSED_RUNTIME_MS + DAY, { marker: false });
   otherRuntime(dir, "transformers-4.2.1", 2 * DAY, { marker: false });
   // Not a runtime folder: left alone, however old.
   otherRuntime(dir, "models", UNUSED_RUNTIME_MS + DAY);
   await load(dir);
-  assert.deepEqual(fs.readdirSync(runtime).sort(), ["models", "transformers-4.1.0", "transformers-4.2.1", runtimeFolder(SPEC)].sort());
+  assert.deepEqual(fs.readdirSync(runtime).sort(), ["models", "transformers-4.1.0", "transformers-4.1.1", "transformers-4.2.1", runtimeFolder(SPEC)].sort());
 });
 
 test("prune: the runtime loaded is kept however long it went unused", async () => {
