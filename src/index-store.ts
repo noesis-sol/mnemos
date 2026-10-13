@@ -46,7 +46,7 @@ export interface BookmarkRow {
   url: string;
   title: string;
   folder_path: string;
-  /** null leaves a stored description as it is. */
+  /** Omitted (undefined) leaves a stored description as it is; null clears it. */
   description?: string | null;
   /** Hash of the text the title vector is computed from: a new hash drops the vector. */
   text_hash: string;
@@ -425,25 +425,27 @@ export class IndexStore {
   private upsertRows(rows: Iterable<BookmarkRow>): number {
     const statement = this.db.prepare(`
       INSERT INTO bookmarks (guid, url, title, folder_path, description, text_hash, vector, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7)
       ON CONFLICT(guid) DO UPDATE SET
         url = excluded.url,
         title = excluded.title,
         folder_path = excluded.folder_path,
-        description = COALESCE(excluded.description, bookmarks.description),
+        description = CASE WHEN ?8 THEN bookmarks.description ELSE excluded.description END,
         vector = CASE WHEN bookmarks.text_hash = excluded.text_hash THEN bookmarks.vector END,
         text_hash = excluded.text_hash,
         updated_at = excluded.updated_at
       WHERE bookmarks.url IS NOT excluded.url
          OR bookmarks.title IS NOT excluded.title
          OR bookmarks.folder_path IS NOT excluded.folder_path
-         OR (excluded.description IS NOT NULL AND bookmarks.description IS NOT excluded.description)
+         OR (NOT ?8 AND bookmarks.description IS NOT excluded.description)
          OR bookmarks.text_hash IS NOT excluded.text_hash`);
     const at = this.now();
     let changed = 0;
     for (const r of rows) {
+      // ?8: the row passes no description, so the stored one stays.
+      const keep = r.description === undefined ? 1 : 0;
       changed += Number(
-        statement.run(r.guid, r.url, r.title, r.folder_path, r.description ?? null, r.text_hash, at).changes,
+        statement.run(r.guid, r.url, r.title, r.folder_path, r.description ?? null, r.text_hash, at, keep).changes,
       );
     }
     return changed;

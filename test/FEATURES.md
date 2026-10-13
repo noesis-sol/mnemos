@@ -143,7 +143,7 @@ root entry and that matrix in step.
   rebuild of an older or newer `schema_version`; a garbage file, an overwritten header and a
   damaged page deep in the file (found by `PRAGMA quick_check` at open) moved aside and rebuilt;
   `isCorrupt`; bookmark upsert (unchanged rows untouched, a new `text_hash` drops the vector,
-  descriptions kept), delete and sync, with a URL's page and chunks kept until its last bookmark
+  descriptions kept when omitted, cleared when null), delete and sync, with a URL's page and chunks kept until its last bookmark
   goes; same URL in two folders as two rows; Float32 BLOB round trip bit for bit; nearest
   bookmarks and chunks by dot product; pages and chunks; a model or revision change dropping every
   vector and keeping the rows; the lease acquired, renewed, expired, taken over and released
@@ -272,7 +272,8 @@ root entry and that matrix in step.
 
 - **Reached by**: every server start: `src/index.ts` calls `Indexer.start()` once
   `server.connect()` returns; `src/indexer.ts` (`Indexer`, `urlWords`, `embeddingText`,
-  `bookmarkRows`). Each bookmark's text (title, folder path, URL words) is hashed; rows are
+  `bookmarkRows`). Each bookmark's text (title, description from `lib.describe`, folder path,
+  URL words) is hashed and its description kept in the store's `description` column; rows are
   synced into the index store, and only those without a vector (new, changed text, or a new
   model) are embedded, as `passage`, in batches of 32. `checkForChanges()` (for
   `semantic_search`) re-indexes, debounced, when the file's mtime or size changed or the last
@@ -292,10 +293,13 @@ root entry and that matrix in step.
   `urlWords` (no www or TLD, country second-level domains, path split on `/ - _ .` and
   camelCase, query and fragment dropped, page extensions, percent-encoding, IDN hosts in
   Unicode, IP hosts, non-web URLs, dedup, the 32-word cap) and `embeddingText`.
+  `test/bookmark-descriptions.test.js`: the description goes after the title in the text (a
+  blank one adds no line), `bookmarkRows` takes it from `lib.describe` (null when none), a null
+  description clears the stored one while an omitted one keeps it, and in process a changed or
+  removed description re-embeds that bookmark alone and updates the column.
 - **Untested**: the real model indexing titles (only the opt-in model e2e loads it);
   `checkForChanges()` over MCP (no tool calls it until `semantic_search`).
-- **Tickets**: mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`); mnemos-yrt
-  (descriptions in the text)
+- **Tickets**: mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`)
 
 ## Tool errors over MCP
 

@@ -117,7 +117,12 @@ function entriesOf(file) {
 }
 
 function textOf(entry) {
-  return embeddingText({ title: entry.node.name ?? "", folder_path: entry.folder, url: entry.node.url ?? "" });
+  return embeddingText({
+    title: entry.node.name ?? "",
+    description: lib.describe(entry.node),
+    folder_path: entry.folder,
+    url: entry.node.url ?? "",
+  });
 }
 
 // --- over MCP ----------------------------------------------------------------

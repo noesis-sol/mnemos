@@ -1,7 +1,7 @@
 /**
  * The background title indexer: keeps one vector per bookmark in the index
- * store, computed from the bookmark's title, folder path and the words of its
- * URL.
+ * store, computed from the bookmark's title, description, folder path and the
+ * words of its URL.
  *
  * It starts after the MCP handshake has been set up and never holds it or a
  * tool call up: the file is read and the store synced in one short step, then
@@ -90,9 +90,19 @@ export function urlWords(raw: string): string {
   return unique.slice(0, MAX_URL_WORDS).join(" ");
 }
 
-/** What a bookmark's vector is computed from: its title, folder path and URL words, a line each. */
-export function embeddingText(bookmark: { title: string; folder_path: string; url: string }): string {
-  return [bookmark.title.trim(), bookmark.folder_path, urlWords(bookmark.url)].filter(Boolean).join("\n");
+/**
+ * What a bookmark's vector is computed from: its title, description (see
+ * lib.describe), folder path and URL words, a line each.
+ */
+export function embeddingText(bookmark: {
+  title: string;
+  description?: string | null;
+  folder_path: string;
+  url: string;
+}): string {
+  return [bookmark.title.trim(), bookmark.description?.trim(), bookmark.folder_path, urlWords(bookmark.url)]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export function textHash(text: string): string {
@@ -117,7 +127,8 @@ export function bookmarkRows(entries: Iterable<lib.Entry>): BookmarkRow[] {
       copies.set(place, copy + 1);
       guid = `h:${textHash(`${place}\0${copy}`).slice(0, 32)}`;
     }
-    const row = { guid, url, title: node.name ?? "", folder_path: folder };
+    // null, not undefined: a description removed in the browser is cleared in the store too.
+    const row = { guid, url, title: node.name ?? "", folder_path: folder, description: lib.describe(node) ?? null };
     rows.push({ ...row, text_hash: textHash(embeddingText(row)) });
   }
   return rows;
