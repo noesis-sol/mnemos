@@ -212,10 +212,31 @@ root entry and that matrix in step.
   five, the sixth refused, hops into private addresses, names resolving to them, token URLs,
   other schemes and skipped domains stopped without being requested; the 5 MB cap by
   `Content-Length`, chunked and decompressed, with exactly 5 MB still fetched; timeouts on
-  headers and body; non-HTML skipped; XHTML, charset and gzip decoding; 403/429 refused once
-  with `Retry-After`; the request headers.
+  headers and body; non-HTML skipped (and PDFs with `acceptPdf: false`); XHTML, charset and gzip
+  decoding; 403/429 refused once with `Retry-After`; the request headers.
 - **Untested**: Brotli and deflate bodies; IPv6 connections (the servers listen on IPv4 only).
 - **Tickets**: mnemos-tc4.8
+
+## PDF bookmarks
+
+- **Reached by**: nothing in the server yet (the background page fetch, mnemos-tc4.9, will call
+  it); `safeFetch` returns `kind: "pdf"` with the file's bytes for `application/pdf`,
+  `application/x-pdf`, or a generic download type at a `.pdf` path, when the body starts with
+  `%PDF-` (up to the 5 MB cap; `acceptPdf: false` skips PDFs); `src/pdf.ts`: `extractPdfText`,
+  `pdfSupport`, `looksLikePdf`. The parser is pdf.js through `unpdf`, an optionalDependency
+  loaded with `import()` on first use.
+- **Tests**: `test/pdf-extract.test.js` (unit, real `unpdf`, PDFs built in memory by
+  `test/fixtures/make-pdf.js`): text with lines joined, whitespace collapsed and pages separated
+  by a blank line; a `Buffer` input left untouched; a PDF with no text; the page and character
+  caps; encrypted, non-PDF and broken-xref files; an abort before and during extraction; a parser
+  that fails to load reports `unavailable`; the `%PDF-` header check; nothing written to stdout or
+  stderr, in a child process. `test/fetch-pdf.test.js` (unit against a local `node:http` server):
+  `application/pdf`, `application/x-pdf` and gzip-encoded PDFs come back as bytes; octet-stream
+  only at a `.pdf` path; an HTML body served as a PDF is skipped; the 5 MB cap; the `Accept`
+  header with and without `acceptPdf`; a fetched PDF extracts to its text.
+- **Untested**: CJK text in predefined CMaps (not recovered: `pdfjs-dist`'s CMap files are not
+  installed); a PDF over 200 pages in full; the server with `unpdf` uninstalled.
+- **Tickets**: mnemos-9xs
 
 ## Tool errors over MCP
 

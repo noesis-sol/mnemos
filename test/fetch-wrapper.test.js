@@ -323,9 +323,9 @@ test("timeout: a body that never ends times out", async () => {
 
 // --- content types, encodings, refusals --------------------------------------------------
 
-test("non-HTML: a PDF or a response with no Content-Type is skipped as not-html", async () => {
-  for (const path of ["/pdf", "/no-type"]) {
-    const r = await f.safeFetch(viaPlain(path), { resolve });
+test("non-HTML: a response with no Content-Type, or a PDF with acceptPdf false, is skipped as not-html", async () => {
+  for (const [path, options] of [["/no-type", {}], ["/pdf", { acceptPdf: false }]]) {
+    const r = await f.safeFetch(viaPlain(path), { resolve, ...options });
     assert.deepEqual(r, { status: "skipped", reason: "not-html", url: viaPlain(path) });
   }
 });
@@ -333,6 +333,7 @@ test("non-HTML: a PDF or a response with no Content-Type is skipped as not-html"
 test("HTML: application/xhtml+xml is accepted; charset and gzip are decoded", async () => {
   const xhtml = await f.safeFetch(viaPlain("/xhtml"), { resolve });
   assert.equal(xhtml.status, "ok");
+  assert.equal(xhtml.kind, "html");
   assert.equal(xhtml.contentType, "application/xhtml+xml");
   const latin1 = await f.safeFetch(viaPlain("/latin1"), { resolve });
   assert.equal(latin1.html, "café");

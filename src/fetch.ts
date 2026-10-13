@@ -3,8 +3,9 @@
  * page may be fetched at all (scheme, token-like URLs, skipped domains and
  * folders, private addresses) and fetches it under hard limits: https first,
  * at most five manually followed redirects re-checked hop by hop, a per-page
- * timeout, a response size cap and an HTML-only Content-Type. No scheduling
- * here — callers decide when and how often.
+ * timeout, a response size cap, and HTML or PDF content only (a PDF comes
+ * back as bytes, for pdf.ts to read). No scheduling here — callers decide
+ * when and how often.
  *
  * Two deliberate choices, also stated in the README:
  *
@@ -25,6 +26,7 @@ import zlib from "node:zlib";
 import { domainToASCII } from "node:url";
 import type { Readable } from "node:stream";
 import { folderMatches } from "./lib.js";
+import { looksLikePdf } from "./pdf.js";
 
 /** Why a page is not fetched: a policy decision, not a failure. */
 export type SkipReason =
@@ -34,6 +36,7 @@ export type SkipReason =
   | "skip-domain"
   | "skip-folder"
   | "private-address"
+  /** Neither an HTML page nor (when accepted) a PDF. */
   | "not-html";
 
 /** Why a fetch that was allowed did not produce a page. */
@@ -49,12 +52,22 @@ export type FailReason =
 export type FetchOutcome =
   | {
       status: "ok";
+      kind: "html";
       /** The URL the page was finally served from, after upgrades and redirects. */
       url: string;
       httpStatus: number;
       contentType: string;
       charset: string;
       html: string;
+    }
+  | {
+      status: "ok";
+      kind: "pdf";
+      url: string;
+      httpStatus: number;
+      contentType: string;
+      /** The file as served (decompressed), checked to start with a PDF header. */
+      pdf: Uint8Array;
     }
   | { status: "skipped"; reason: SkipReason; url: string }
   /** 403 or 429: the site said no. Not retried here; see the module comment. */
@@ -78,6 +91,15 @@ export const USER_AGENT =
   "(KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36";
 
 const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
+const PDF_TYPES = new Set(["application/pdf", "application/x-pdf"]);
+/** Generic download types some servers send PDFs as: taken only for a path ending in .pdf. */
+const BINARY_TYPES = new Set([
+  "application/octet-stream",
+  "binary/octet-stream",
+  "application/download",
+  "application/x-download",
+  "application/force-download",
+]);
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -430,6 +452,11 @@ export interface FetchOptions {
    * added to Node's bundled roots rather than replacing them.
    */
   ca?: string | Buffer | Array<string | Buffer>;
+  /**
+   * Fetch PDFs too (default true): pass false when no PDF parser is
+   * available (pdf.pdfSupport), and PDFs are skipped as not-html unread.
+   */
+  acceptPdf?: boolean;
 }
 
 class StopError extends Error {
@@ -470,7 +497,10 @@ async function request(
         signal: opts.signal,
         headers: {
           "User-Agent": USER_AGENT,
-          Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+          Accept:
+            opts.acceptPdf === false
+              ? "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"
+              : "text/html,application/xhtml+xml;q=0.9,application/pdf;q=0.9,*/*;q=0.8",
           "Accept-Language": acceptLanguage(),
           "Accept-Encoding": "gzip, deflate, br",
         },
@@ -643,7 +673,10 @@ export async function safeFetch(input: string, options: FetchOptions = {}): Prom
         return { status: "failed", reason: "http-error", url: current, httpStatus: code };
       }
       const { type, charset } = parseContentType(res.headers["content-type"]);
-      if (!HTML_TYPES.has(type)) {
+      const pdf =
+        options.acceptPdf !== false &&
+        (PDF_TYPES.has(type) || (BINARY_TYPES.has(type) && /\.pdf$/i.test(url.pathname)));
+      if (!HTML_TYPES.has(type) && !pdf) {
         res.destroy();
         return { status: "skipped", reason: "not-html", url: current };
       }
@@ -653,8 +686,13 @@ export async function safeFetch(input: string, options: FetchOptions = {}): Prom
         return { status: "failed", reason: "too-large", url: current };
       }
       const body = await readBody(res, maxBytes, current, controller.signal);
+      if (pdf) {
+        // A login or error page served as a PDF, or some other download.
+        if (!looksLikePdf(body)) return { status: "skipped", reason: "not-html", url: current };
+        return { status: "ok", kind: "pdf", url: current, httpStatus: code, contentType: "application/pdf", pdf: body };
+      }
       const decoded = decode(body, charset);
-      return { status: "ok", url: current, httpStatus: code, contentType: type, ...decoded };
+      return { status: "ok", kind: "html", url: current, httpStatus: code, contentType: type, ...decoded };
     }
   } catch (e) {
     if (e instanceof StopError) return e.outcome;
