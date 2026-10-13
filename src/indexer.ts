@@ -29,6 +29,12 @@ export const REINDEX_DEBOUNCE_MS = 2_000;
 
 /** At most this many URL words go into the text, so a long URL cannot crowd the title out. */
 const MAX_URL_WORDS = 32;
+/**
+ * At most this many characters of the description go into the text, so a long
+ * one (Safari's Reading List preview text) cannot push the folder path and URL
+ * words past what the embedder reads.
+ */
+export const MAX_DESCRIPTION_CHARS = 300;
 /** Longer "words" are ids and hashes, not words. */
 const MAX_WORD_LENGTH = 40;
 /** Second-level labels under a two-letter country TLD, dropped with it: bbc.co.uk is "bbc". */
@@ -91,8 +97,24 @@ export function urlWords(raw: string): string {
 }
 
 /**
+ * The description as it goes into the text: on one line, and if longer than
+ * MAX_DESCRIPTION_CHARS, cut at the last space before that (or at the limit
+ * when the last space is in the first half), never inside a surrogate pair.
+ */
+export function clipDescription(description: string): string {
+  const text = description.replace(/\s+/g, " ").trim();
+  const chars = Array.from(text);
+  if (chars.length <= MAX_DESCRIPTION_CHARS) return text;
+  const cut = chars.slice(0, MAX_DESCRIPTION_CHARS + 1).join("");
+  const space = cut.lastIndexOf(" ");
+  if (space >= cut.length / 2) return cut.slice(0, space);
+  return chars.slice(0, MAX_DESCRIPTION_CHARS).join("");
+}
+
+/**
  * What a bookmark's vector is computed from: its title, description (see
- * lib.describe), folder path and URL words, a line each.
+ * lib.describe, clipped by clipDescription), folder path and URL words, a line
+ * each.
  */
 export function embeddingText(bookmark: {
   title: string;
@@ -100,7 +122,8 @@ export function embeddingText(bookmark: {
   folder_path: string;
   url: string;
 }): string {
-  return [bookmark.title.trim(), bookmark.description?.trim(), bookmark.folder_path, urlWords(bookmark.url)]
+  const description = clipDescription(bookmark.description ?? "");
+  return [bookmark.title.trim(), description, bookmark.folder_path, urlWords(bookmark.url)]
     .filter(Boolean)
     .join("\n");
 }

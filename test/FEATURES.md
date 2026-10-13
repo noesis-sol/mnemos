@@ -272,8 +272,8 @@ root entry and that matrix in step.
 
 - **Reached by**: every server start: `src/index.ts` calls `Indexer.start()` once
   `server.connect()` returns; `src/indexer.ts` (`Indexer`, `urlWords`, `embeddingText`,
-  `bookmarkRows`). Each bookmark's text (title, description from `lib.describe`, folder path,
-  URL words) is hashed and its description kept in the store's `description` column; rows are
+  `bookmarkRows`, `clipDescription`). Each bookmark's text (title, description from `lib.describe`
+  clipped to 300 characters, folder path, URL words) is hashed and its description kept in the store's `description` column; rows are
   synced into the index store, and only those without a vector (new, changed text, or a new
   model) are embedded, as `passage`, in batches of 32. `checkForChanges()` (for
   `semantic_search`) re-indexes, debounced, when the file's mtime or size changed or the last
@@ -297,6 +297,10 @@ root entry and that matrix in step.
   blank one adds no line), `bookmarkRows` takes it from `lib.describe` (null when none), a null
   description clears the stored one while an omitted one keeps it, and in process a changed or
   removed description re-embeds that bookmark alone and updates the column.
+  `test/description-clip.test.js` (unit): `clipDescription` puts the description on one line
+  and cuts a long one to 300 characters at a word boundary (or at the limit, never inside a
+  surrogate pair); in `embeddingText` the folder path and URL words still follow it, and the
+  stored description stays whole.
 - **Untested**: the real model indexing titles (only the opt-in model e2e loads it);
   `checkForChanges()` over MCP (no tool calls it until `semantic_search`).
 - **Tickets**: mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`)
