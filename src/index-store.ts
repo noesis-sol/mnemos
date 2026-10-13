@@ -604,16 +604,19 @@ export class IndexStore {
     this.db.prepare("UPDATE pages SET next_attempt_at = ? WHERE url = ?").run(at, url);
   }
 
-  /** The URLs of pages to fetch now: pending ones, and those whose next attempt is due at `now`. */
-  duePages(now: number): string[] {
+  /**
+   * The pages to fetch now: pending ones (never fetched) first, then those
+   * whose next attempt (a refresh or a retry) is due at `now`.
+   */
+  duePages(now: number): { url: string; pending: boolean }[] {
     return this.db
       .prepare(
-        `SELECT url FROM pages
+        `SELECT url, status = 'pending' AS pending FROM pages
          WHERE status = 'pending' OR (next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
-         ORDER BY url`,
+         ORDER BY pending DESC, url`,
       )
       .all(now)
-      .map((r) => r.url as string);
+      .map((r) => ({ url: r.url as string, pending: Number(r.pending) === 1 }));
   }
 
   /** How many pages are in each status. */

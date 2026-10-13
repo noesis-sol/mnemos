@@ -18,9 +18,10 @@
  * no_content page (no text even in the browser) is not fetched again. Pages of deleted bookmarks are dropped
  * by the indexer's sync (IndexStore.syncBookmarks).
  *
- * Polite and in the background: newest bookmarks first, at most CONCURRENCY
- * fetches at once, one at a time per domain, and DOMAIN_GAP_MS between the end
- * of one request to a domain and the start of the next. It yields to the event
+ * Polite and in the background: pages never fetched before refreshes and
+ * retries, newest bookmarks first, at most CONCURRENCY fetches at once, one at
+ * a time per domain, and DOMAIN_GAP_MS between the end of one request to a
+ * domain and the start of the next. It yields to the event
  * loop between steps, and an error is recorded on its page (failed, retried
  * with backoff) rather than thrown; nothing here throws into a tool call.
  *
@@ -215,6 +216,8 @@ interface QueueItem {
   domain: string;
   folders: string[];
   added: number;
+  /** Never fetched: it goes ahead of refreshes and retries. */
+  pending?: boolean;
   /** Load it in the browser: its plain fetch had no readable text. */
   browser?: boolean;
 }
@@ -371,7 +374,16 @@ export class Fetcher {
     try {
       const store = this.openStore();
       if (this.holding) {
-        if (!store.renewLease(LEASE_NAME, this.leaseTtlMs)) this.lose();
+        if (!store.renewLease(LEASE_NAME, this.leaseTtlMs)) {
+          this.lose();
+          return;
+        }
+        // Bookmarks added while a long queue (say a day's 30-day refreshes) drains go ahead of it,
+        // not behind: refill when the index has bookmarks with no page yet.
+        if (this.queue.length > 0 && store.addPendingPages() > 0) {
+          this.refill();
+          this.pump();
+        }
         return;
       }
       if (!store.acquireLease(LEASE_NAME, this.leaseTtlMs)) {
@@ -440,9 +452,9 @@ export class Fetcher {
 
   /**
    * Re-reads the bookmarks, adds pages for new URLs, applies the skip lists
-   * to every page, and queues the pages that are due (pending, failed ones
- * whose backoff is over, and pages last fetched REFRESH_MS ago), newest
- * bookmark first.
+   * to every page, and queues the pages that are due: pending ones (never
+   * fetched) first, then failed ones whose backoff is over and pages last
+   * fetched REFRESH_MS ago, each newest bookmark first.
    */
   private refill(): void {
     const store = this.store;
@@ -462,10 +474,10 @@ export class Fetcher {
     store.addPendingPages();
     this.applyPolicy(store, info, config);
     const due: QueueItem[] = [];
-    for (const url of store.duePages(this.now())) {
+    for (const { url, pending } of store.duePages(this.now())) {
       const bookmark = info.get(url);
       if (!bookmark || this.active.has(url)) continue;
-      due.push({ url, domain: domainKey(url), ...bookmark });
+      due.push({ url, domain: domainKey(url), ...bookmark, pending });
     }
     // Pages left needing a browser by an earlier run (or one that had none).
     if (!this.browserUnavailable) {
@@ -475,7 +487,7 @@ export class Fetcher {
         due.push({ url: page.url, domain: domainKey(page.url), ...bookmark, browser: true });
       }
     }
-    due.sort((a, b) => b.added - a.added);
+    due.sort((a, b) => Number(b.pending ?? false) - Number(a.pending ?? false) || b.added - a.added);
     this.queue = due;
   }
 

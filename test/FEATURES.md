@@ -335,8 +335,8 @@ root entry and that matrix in step.
   (`extractPage`, `isLoginUrl`, `Extractor`) and `src/extract-worker.ts`. Only the process holding the store's `fetcher` lease (30 s, renewed every 10 s)
   fetches. It adds a pending page per http(s) bookmark URL, applies `MNEMOS_SKIP_DOMAINS` and
   `MNEMOS_SKIP_FOLDERS` to every page (dropping a newly skipped page's text and chunks), and
-  fetches pending and due pages with `safeFetch` (PDFs skipped as not-html for now), newest
-  bookmark first, 4 at a time, one per domain with 1 s between. Readability on a linkedom
+  fetches pending and due pages with `safeFetch` (PDFs skipped as not-html for now), pages
+  never fetched before refreshes and retries, newest bookmark first, 4 at a time, one per domain with 1 s between. Readability on a linkedom
   document, in a worker thread (30 s limit per page), gives the text (whitespace collapsed, cut at 200,000 characters), stored in
   `pages.text` (schema version 2) with `final_url`, `content_hash` and `fetched_at`; a password
   field or a login path with under 1,000 characters is `needs_login`, under 200 characters
@@ -362,10 +362,12 @@ root entry and that matrix in step.
   newest first; only the lease holder fetches and the other takes over after `stop()`; disabled
   opens nothing; the skip lists skip and un-skip pages; a fetch that throws is recorded on its
   page; the store's version 1 to 2 migration, `addPendingPages`, `duePages`, `addMeta` and
-  `takeMeta`.
+  `takeMeta`. `test/fetch-queue-order.test.js`: `duePages` lists pending pages first; a `Fetcher`
+  fetches never-fetched bookmarks before the refreshes and retries due, and a bookmark added
+  while refreshes drain at the next heartbeat.
 - **Untested**: the lease lapsing while a holder still runs (another process taking it over
   mid-fetch); real websites; the worker dying mid-page.
-- **Tickets**: mnemos-tc4.9; mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
+- **Tickets**: mnemos-tc4.9; mnemos-dbz (new bookmarks before refreshes); mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
   mnemos-tc4.5 (`no_content` pages through a headless browser)
 
 ## Index freshness

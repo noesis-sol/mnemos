@@ -798,8 +798,11 @@ test("store: pending pages for http(s) bookmarks, due pages, and a note taken on
     assert.equal(store.addPendingPages(), 2);
     assert.equal(store.addPendingPages(), 0);
     store.upsertPage({ url: "https://a.example/", status: "failed", fail_count: 1, next_attempt_at: 100 });
-    assert.deepEqual(store.duePages(99), ["HTTP://b.example/"]);
-    assert.deepEqual(store.duePages(100), ["HTTP://b.example/", "https://a.example/"]);
+    assert.deepEqual(store.duePages(99), [{ url: "HTTP://b.example/", pending: true }]);
+    assert.deepEqual(store.duePages(100), [
+      { url: "HTTP://b.example/", pending: true },
+      { url: "https://a.example/", pending: false },
+    ]);
     assert.deepEqual(store.pageCounts(), { failed: 1, pending: 1 });
     assert.equal(store.addMeta("k", "1"), true);
     assert.equal(store.addMeta("k", "2"), false);
