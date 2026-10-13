@@ -372,3 +372,38 @@ test("fake embedder: its synonyms score as the same word; `unavailable` plays a 
   assert.deepEqual(fake.status(), { state: "unavailable", reason: "no runtime" });
   await assert.rejects(fake.embed(["x"], "query"), EmbedderUnavailableError);
 });
+
+test("semantic search: the cutoff is also relative, to the median title and to the best hit", async () => {
+  const s = scratch();
+  const fake = new FakeEmbedder();
+  const indexer = new Indexer({
+    embedder: fake,
+    bookmarksFile: () => s.bookmarks,
+    entries: () => entriesOf(s.bookmarks),
+    dir: s.cache,
+  });
+  indexer.start();
+  await indexer.idle();
+  // OpenAI scores about 0.44 and Attention about 0.16; the median title, 0.
+  const kept = async (relevance) => {
+    const embedder = {
+      ...{ id: fake.id, revision: fake.revision, dim: fake.dim, relevance },
+      status: () => fake.status(),
+      embed: (texts, kind) => fake.embed(texts, kind),
+    };
+    const data = await semanticSearch({ embedder, indexer, env: {} }, "arxiv openai models");
+    return titles(data);
+  };
+  const saved = process.env.CHROME_BOOKMARKS_PATH;
+  process.env.CHROME_BOOKMARKS_PATH = s.bookmarks;
+  try {
+    assert.deepEqual(await kept({ floor: 0.01, margin: 0, window: 1 }), ["OpenAI", "Attention is all you need"]);
+    assert.deepEqual(await kept({ floor: 0.01, margin: 0.3, window: 1 }), ["OpenAI"], "median + margin");
+    assert.deepEqual(await kept({ floor: 0.01, margin: 0, window: 0.3 }), ["OpenAI", "Attention is all you need"]);
+    assert.deepEqual(await kept({ floor: 0.01, margin: 0, window: 0.2 }), ["OpenAI"], "best - window");
+  } finally {
+    if (saved === undefined) delete process.env.CHROME_BOOKMARKS_PATH;
+    else process.env.CHROME_BOOKMARKS_PATH = saved;
+    indexer.close();
+  }
+});
