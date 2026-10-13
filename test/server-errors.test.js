@@ -3,6 +3,7 @@
 // the server or corrupt the stream. Spawns the built server like server.test.js.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -13,13 +14,18 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FIXTURE = path.join(ROOT, "test", "fixtures", "bookmarks.json");
 
+// Index in a scratch cache with the fake embedder: never the user's cache, never the real model.
+const CACHE = mkdtempSync(path.join(os.tmpdir(), "mnemos-cache-"));
+const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake" };
+after(() => rmSync(CACHE, { recursive: true, force: true }));
+
 async function startServer(bookmarksPath) {
   const client = new Client({ name: "mnemos-test-errors", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath, // current node binary — robust on Windows
       args: [path.join(ROOT, "dist", "index.js")],
-      env: { ...process.env, CHROME_BOOKMARKS_PATH: bookmarksPath },
+      env: { ...process.env, ...INDEX_ENV, CHROME_BOOKMARKS_PATH: bookmarksPath },
     }),
   );
   return client;

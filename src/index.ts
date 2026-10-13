@@ -24,6 +24,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import * as lib from "./lib.js";
 import { ICONS } from "./icon.js";
+import { createEmbedder } from "./embedder.js";
+import { Indexer } from "./indexer.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -157,8 +159,13 @@ server.registerTool(
   async ({ limit }) => safely(() => lib.topDomains(limit)),
 );
 
+/** Embeds bookmark titles in the background; semantic search reads what it stores. */
+const indexer = new Indexer({ embedder: createEmbedder() });
+
 async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
+  // After connect, and on a later tick: the handshake never waits for indexing.
+  indexer.start();
 }
 
 main().catch((e) => {

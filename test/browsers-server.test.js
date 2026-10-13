@@ -2,8 +2,10 @@
 // client, reads a Safari Bookmarks.plist through CHROME_BOOKMARKS_PATH and
 // returns descriptions over the wire; an unknown MNEMOS_BOOKMARKS_BROWSER
 // comes back as isError.
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -12,13 +14,18 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SAFARI_FIXTURE = path.join(ROOT, "test", "fixtures", "safari-bookmarks.plist");
 
+// Index in a scratch cache with the fake embedder: never the user's cache, never the real model.
+const CACHE = mkdtempSync(path.join(os.tmpdir(), "mnemos-cache-"));
+const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake" };
+after(() => rmSync(CACHE, { recursive: true, force: true }));
+
 async function withServer(env, fn) {
   const client = new Client({ name: "mnemos-test", version: "0.0.0" });
   await client.connect(
     new StdioClientTransport({
       command: process.execPath,
       args: [path.join(ROOT, "dist", "index.js")],
-      env: { ...process.env, CHROME_BOOKMARKS_PATH: "", MNEMOS_BOOKMARKS_BROWSER: "", TZ: "UTC", ...env },
+      env: { ...process.env, ...INDEX_ENV, CHROME_BOOKMARKS_PATH: "", MNEMOS_BOOKMARKS_BROWSER: "", TZ: "UTC", ...env },
     }),
   );
   try {

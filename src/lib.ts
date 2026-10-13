@@ -34,6 +34,8 @@ export interface BookmarkNode {
   name?: string;
   url?: string;
   date_added?: string;
+  /** Chromium's stable id for the node; the Firefox and Safari readers leave it out. */
+  guid?: string;
   children?: BookmarkNode[];
   /** Chromium's per-node metadata; Vivaldi keeps a bookmark's description here. */
   meta_info?: Record<string, unknown>;

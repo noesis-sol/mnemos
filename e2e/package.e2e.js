@@ -95,7 +95,13 @@ test("unpacked package: starts through its bin and answers initialize and tools/
       command,
       args,
       cwd: scratch, // not the repo, so nothing resolves from it by accident
-      env: { ...process.env, CHROME_BOOKMARKS_PATH: FIXTURE },
+      env: {
+        ...process.env,
+        CHROME_BOOKMARKS_PATH: FIXTURE,
+        // Its index in the scratch directory, not the user's cache, and the fake embedder, not the real model.
+        MNEMOS_CACHE_DIR: path.join(scratch, "cache"),
+        MNEMOS_EMBEDDER: "fake",
+      },
     }),
   );
   try {

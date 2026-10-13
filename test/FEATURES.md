@@ -133,9 +133,9 @@ root entry and that matrix in step.
 
 ## Local index store
 
-- **Reached by**: nothing yet; `src/index-store.ts` (`IndexStore.open`, `cacheDir`,
-  `indexFile`) is the semantic-search index the background embedder and page fetcher will use
-  (epic mnemos-tc4). One `node:sqlite` file in WAL mode per Bookmarks file, in
+- **Reached by**: the background title indexer (see Background title indexing);
+  `src/index-store.ts` (`IndexStore.open`, `cacheDir`, `indexFile`) is the semantic-search
+  index, which the page fetcher will use too (epic mnemos-tc4). One `node:sqlite` file in WAL mode per Bookmarks file, in
   `MNEMOS_CACHE_DIR` or the OS cache directory.
 - **Tests**: `test/index-store.test.js` (unit, every store in a temporary `MNEMOS_CACHE_DIR`):
   `cacheDir` per platform with the environment injected (`MNEMOS_CACHE_DIR`, `XDG_CACHE_HOME`
@@ -241,12 +241,15 @@ root entry and that matrix in step.
 
 ## Embedder
 
-- **Reached by**: nothing yet; `src/embedder.ts` (`createEmbedder`, `ModelEmbedder`,
-  `FakeEmbedder`) is what the background indexer and `semantic_search` will use (epic
-  mnemos-tc4). The real model, Xenova/multilingual-e5-small (quantized ONNX) at a pinned
+- **Reached by**: the background title indexer (see Background title indexing);
+  `src/embedder.ts` (`createEmbedder`, `ModelEmbedder`, `FakeEmbedder`), which
+  `semantic_search` will use too (epic mnemos-tc4). The real model, Xenova/multilingual-e5-small (quantized ONNX) at a pinned
   revision, runs through the optional dependency `@huggingface/transformers`, imported with
   `import()` on the first `embed()`; downloaded on first use into `<cache dir>/models`.
-  `MNEMOS_EMBEDDER=fake` selects a deterministic word-hashing embedder, for tests only.
+  `MNEMOS_EMBEDDER=fake` selects a deterministic word-hashing embedder, for tests only;
+  with it, `MNEMOS_FAKE_EMBED_GATE` (embed waits until that file exists) and
+  `MNEMOS_FAKE_EMBED_LOG` (each embedded text appended as a JSON line) let tests over MCP
+  slow embedding down and count it.
 - **Tests**: `test/embedder.test.js` (unit; the library replaced by a stand-in, or its import
   failed, so no model and no network): the fake is deterministic, 384-dim and normalised, texts
   sharing words score higher and texts sharing none score 0, in any script; a failing import
@@ -264,6 +267,35 @@ root entry and that matrix in step.
   cache with the library's fetch cut.
 - **Untested**: the real model in CI (never: it would need the network); the download's
   progress events from the real library outside the opt-in e2e.
+
+## Background title indexing
+
+- **Reached by**: every server start: `src/index.ts` calls `Indexer.start()` once
+  `server.connect()` returns; `src/indexer.ts` (`Indexer`, `urlWords`, `embeddingText`,
+  `bookmarkRows`). Each bookmark's text (title, folder path, URL words) is hashed; rows are
+  synced into the index store, and only those without a vector (new, changed text, or a new
+  model) are embedded, as `passage`, in batches of 32. `checkForChanges()` (for
+  `semantic_search`) re-indexes, debounced, when the file's mtime or size changed or the last
+  run failed. Errors go to `status()` and stderr, never into a tool. The server-spawning tests
+  set `MNEMOS_CACHE_DIR` to a temporary directory and `MNEMOS_EMBEDDER=fake`, so they never
+  touch the user's cache or the real model.
+- **Tests**: `test/title-index.test.js`: e2e (SDK client over stdio, fake embedder, temporary
+  cache, a copy of the fixture): `initialize` and a tool call return while the fake's gate
+  holds embedding back, then every fixture bookmark gets a 384-dim vector and its text is
+  embedded once; a second start embeds nothing; an added, a renamed and a deleted bookmark
+  re-embed exactly the two changed texts. In process: `start()` reads nothing on the caller's
+  turn, progress counts titles; three `checkForChanges()` calls on a changed file run one
+  re-index after the debounce and none on an unchanged one; a failing embedder, a missing
+  Bookmarks file and an unusable cache directory end in a `failed` status (logged once) and
+  are retried by the next check; a new model revision re-embeds every title; row keys
+  (Chromium guid, else folder, URL and copy number). `test/url-words.test.js` (unit):
+  `urlWords` (no www or TLD, country second-level domains, path split on `/ - _ .` and
+  camelCase, query and fragment dropped, page extensions, percent-encoding, IDN hosts in
+  Unicode, IP hosts, non-web URLs, dedup, the 32-word cap) and `embeddingText`.
+- **Untested**: the real model indexing titles (only the opt-in model e2e loads it);
+  `checkForChanges()` over MCP (no tool calls it until `semantic_search`).
+- **Tickets**: mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`); mnemos-yrt
+  (descriptions in the text)
 
 ## Tool errors over MCP
 

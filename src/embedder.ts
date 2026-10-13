@@ -283,23 +283,38 @@ export class ModelEmbedder implements Embedder {
 
 // --- the fake ----------------------------------------------------------------
 
+export interface FakeEmbedderOptions {
+  /** A file whose existence embed() waits for (MNEMOS_FAKE_EMBED_GATE): a slow embedder. */
+  gate?: string;
+  /** A file embed() appends each embedded text to, one JSON string a line (MNEMOS_FAKE_EMBED_LOG). */
+  log?: string;
+}
+
 /**
  * TEST ONLY (MNEMOS_EMBEDDER=fake): no model, no network. Each word of the
  * text (lower-cased letters and digits) is hashed into one of 384 slots, and
  * the counts are normalised, so texts that share words are similar and texts
  * that share none score 0 (barring hash collisions). Deterministic, and
- * `kind` is ignored.
+ * `kind` is ignored. The gate and log let tests over MCP hold embedding back
+ * and count what was embedded.
  */
 export class FakeEmbedder implements Embedder {
   readonly id = "mnemos-fake-embedder";
   readonly revision = "1";
   readonly dim = MODEL_DIM;
 
+  constructor(private readonly options: FakeEmbedderOptions = {}) {}
+
   status(): EmbedderStatus {
     return { state: "ready" };
   }
 
   async embed(texts: string[], _kind: EmbedKind): Promise<Float32Array[]> {
+    const { gate, log } = this.options;
+    while (gate && !fs.existsSync(gate)) {
+      await new Promise((resolve) => setTimeout(resolve, 20).unref());
+    }
+    if (log && texts.length > 0) fs.appendFileSync(log, texts.map((t) => JSON.stringify(t) + "\n").join(""));
     return texts.map((text) => fakeVector(text, this.dim));
   }
 }
@@ -322,11 +337,19 @@ export function fakeVector(text: string, dim: number = MODEL_DIM): Float32Array 
 
 // --- choosing one ------------------------------------------------------------
 
-/** The fake when MNEMOS_EMBEDDER=fake (tests only), else the real model, not yet loaded. */
+/**
+ * The fake when MNEMOS_EMBEDDER=fake (tests only, with MNEMOS_FAKE_EMBED_GATE
+ * and MNEMOS_FAKE_EMBED_LOG), else the real model, not yet loaded.
+ */
 export function createEmbedder(
   env: NodeJS.ProcessEnv = process.env,
   options: ModelEmbedderOptions = {},
 ): Embedder {
-  if (env.MNEMOS_EMBEDDER === "fake") return new FakeEmbedder();
+  if (env.MNEMOS_EMBEDDER === "fake") {
+    return new FakeEmbedder({
+      gate: env.MNEMOS_FAKE_EMBED_GATE || undefined,
+      log: env.MNEMOS_FAKE_EMBED_LOG || undefined,
+    });
+  }
   return new ModelEmbedder({ dir: cacheDir(env), ...options });
 }

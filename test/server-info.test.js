@@ -3,7 +3,8 @@
 // stdio like server.test.js, and checks the handshake before any tool call.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -13,6 +14,11 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FIXTURE = path.join(ROOT, "test", "fixtures", "bookmarks.json");
 const { version: VERSION } = JSON.parse(readFileSync(path.join(ROOT, "package.json"), "utf8"));
 
+// Index in a scratch cache with the fake embedder: never the user's cache, never the real model.
+const CACHE = mkdtempSync(path.join(os.tmpdir(), "mnemos-cache-"));
+const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake" };
+after(() => rmSync(CACHE, { recursive: true, force: true }));
+
 let client;
 
 before(async () => {
@@ -21,7 +27,7 @@ before(async () => {
     new StdioClientTransport({
       command: process.execPath, // current node binary — robust on Windows
       args: [path.join(ROOT, "dist", "index.js")],
-      env: { ...process.env, CHROME_BOOKMARKS_PATH: FIXTURE },
+      env: { ...process.env, ...INDEX_ENV, CHROME_BOOKMARKS_PATH: FIXTURE },
     }),
   );
 });
