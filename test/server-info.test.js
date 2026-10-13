@@ -17,7 +17,6 @@ const { version: VERSION } = JSON.parse(readFileSync(path.join(ROOT, "package.js
 // Index in a scratch cache with the fake embedder: never the user's cache, never the real model.
 const CACHE = mkdtempSync(path.join(os.tmpdir(), "mnemos-cache-"));
 const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake" };
-after(() => rmSync(CACHE, { recursive: true, force: true }));
 
 let client;
 
@@ -34,6 +33,16 @@ before(async () => {
 
 after(async () => {
   await client.close();
+});
+
+// After the client's close, which waits for the server (and its index writes) to exit. A
+// throwing after hook would skip the hooks after it, so a leftover directory is let be.
+after(() => {
+  try {
+    rmSync(CACHE, { recursive: true, force: true, maxRetries: 5 });
+  } catch {
+    // a temporary directory left behind
+  }
 });
 
 test("initialize: serverInfo names mnemos at the package.json version", () => {

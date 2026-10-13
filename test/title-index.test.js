@@ -23,8 +23,15 @@ const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const FIXTURE = path.join(ROOT, "test", "fixtures", "bookmarks.json");
 
 const dirs = [];
+// Every test closes its clients and indexers first; a directory that will not go is let be.
 after(() => {
-  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  for (const dir of dirs) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+    } catch {
+      // a temporary directory left behind
+    }
+  }
 });
 
 /** A copy of the fixture, a cache directory, and the fake embedder's gate and log files. */
