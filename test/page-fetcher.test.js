@@ -631,8 +631,10 @@ test("Fetcher: four at a time, one per domain with a rest between, newest first"
   }
   // No more than four at once, and never two on one domain or less than domainGapMs apart.
   for (const call of fetch.calls) {
-    const overlapping = fetch.calls.filter((c) => c.start < call.end && call.start < c.end);
-    assert.ok(overlapping.length <= 4, `${overlapping.length} at once`);
+    // In flight as this one starts: two that ran one after the other in a slot overlap this
+    // one's window, but were never in flight together.
+    const inFlight = fetch.calls.filter((c) => c.start <= call.start && call.start < c.end);
+    assert.ok(inFlight.length <= 4, `${inFlight.length} at once`);
     const sameDomain = fetch.calls.filter((c) => c !== call && domainKey(c.url) === domainKey(call.url));
     for (const other of sameDomain) {
       if (other.start < call.start) assert.ok(call.start - other.end >= 35, `${call.url} after ${other.url}`);
