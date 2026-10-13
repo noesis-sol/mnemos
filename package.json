@@ -1,6 +1,6 @@
 {
   "name": "mnemos-mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Read-only MCP server exposing local Chrome bookmarks as a signal of what the user values and endorses",
   "type": "module",
   "bin": {
