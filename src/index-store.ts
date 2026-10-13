@@ -220,8 +220,12 @@ CREATE TABLE lease (
 );
 `;
 
-/** SQLITE_CORRUPT and SQLITE_NOTADB; anything else (a locked file, a full disk) is not ours to discard. */
-function isCorrupt(err: unknown): boolean {
+/**
+ * SQLITE_CORRUPT and SQLITE_NOTADB; anything else (a locked file, a full disk)
+ * is not ours to discard. A caller that meets one after open() can close the
+ * store and open it again, which rebuilds the file.
+ */
+export function isCorrupt(err: unknown): boolean {
   const e = err as { errcode?: number; message?: string };
   if (e?.errcode !== undefined) return (e.errcode & 0xff) === 11 || (e.errcode & 0xff) === 26;
   return /file is not a database|database disk image is malformed/i.test(String(e?.message));
@@ -247,6 +251,13 @@ function openDatabase(file: string): DatabaseSync {
     db.exec("PRAGMA busy_timeout = 5000");
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA synchronous = NORMAL");
+    // Damage past the first pages only shows when those pages are read, so
+    // check them all now rather than fail on every later write. About 80 ms
+    // for a 200 MB index (50k chunk vectors).
+    const check = db.prepare("PRAGMA quick_check(1)").get();
+    if (check?.quick_check !== "ok") {
+      throw Object.assign(new Error(`index failed quick_check: ${check?.quick_check}`), { errcode: 11 });
+    }
     immediate(db, () => {
       const tables = db
         .prepare("SELECT name FROM sqlite_schema WHERE type = 'table'")

@@ -15,6 +15,7 @@ import {
   blobToVector,
   normalize,
   dot,
+  isCorrupt,
 } from "../dist/index-store.js";
 
 let root;
@@ -186,6 +187,36 @@ test("open: a database whose header is overwritten is recovered too", () => {
   assert.ok(store.movedAside);
   assert.deepEqual(store.bookmarkGuids(), []);
   store.close();
+});
+
+test("open: damage deep in the file, past the pages open() reads, is recovered too", () => {
+  const dir = freshDir();
+  let store = IndexStore.open({ bookmarksFile: BOOKMARKS, dir });
+  const rows = [];
+  for (let i = 0; i < 2000; i++) rows.push(row(`g${i}`, `https://e${i}.example/`, `title ${i} `.repeat(5)));
+  store.syncBookmarks(rows);
+  store.close();
+  const pageSize = 4096;
+  assert.ok(fs.statSync(store.file).size > 60 * pageSize);
+  const fd = fs.openSync(store.file, "r+");
+  fs.writeSync(fd, Buffer.alloc(pageSize, 0xff), 0, pageSize, 50 * pageSize);
+  fs.closeSync(fd);
+
+  store = IndexStore.open({ bookmarksFile: BOOKMARKS, dir });
+  assert.ok(store.movedAside);
+  assert.deepEqual(store.bookmarkGuids(), []);
+  store.syncBookmarks(rows.slice(0, 10));
+  assert.equal(store.bookmarkGuids().length, 10);
+  store.close();
+});
+
+test("isCorrupt: corruption errors only, not a busy or other error", () => {
+  assert.equal(isCorrupt({ errcode: 11 }), true);
+  assert.equal(isCorrupt({ errcode: 26 }), true);
+  assert.equal(isCorrupt({ errcode: 11 | (1 << 8) }), true); // an extended SQLITE_CORRUPT code
+  assert.equal(isCorrupt({ errcode: 5 }), false); // SQLITE_BUSY
+  assert.equal(isCorrupt(new Error("file is not a database")), true);
+  assert.equal(isCorrupt(new Error("EACCES")), false);
 });
 
 // --- bookmarks --------------------------------------------------------------
