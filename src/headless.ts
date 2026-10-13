@@ -14,13 +14,17 @@
  * each request's URL (the full checkUrl for the page itself; the host rules
  * for what the page loads) and drops images, media and fonts, and every
  * connection goes through a local PolicyProxy that checks its host and DNS
- * answers, redirect hops included.
+ * answers, redirect hops included. Route interception never sees the redirect
+ * hops Chromium follows itself, so each document request of the top frame,
+ * every hop of its redirects included, is checked with the full checkUrl over
+ * the DevTools protocol (guardNavigation): a page that redirects to a
+ * token-like URL is skipped, as safeFetch skips it.
  */
 
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkUrl, fetchConfig, USER_AGENT, type FetchConfig, type FetchOutcome } from "./fetch.js";
+import { checkUrl, fetchConfig, USER_AGENT, type FetchConfig, type FetchOutcome, type SkipReason } from "./fetch.js";
 import { PolicyProxy } from "./policy-proxy.js";
 
 /** A page gets this long to load and settle, all told. */
@@ -31,6 +35,40 @@ export const SETTLE_MS = 3_000;
 export const BROWSER_PAGES = 2;
 /** Rendered HTML longer than this is not extracted (the plain fetch's size cap, in characters). */
 export const MAX_RENDERED_CHARS = 5 * 1024 * 1024;
+
+/** A top-frame document request the fetch policy refused: where it went, and why. */
+interface RefusedNavigation {
+  url: string;
+  reason: SkipReason;
+}
+
+/**
+ * Checks every document request of the page's top frame with the full
+ * checkUrl, redirect hops included, and fails those it refuses; `refused`
+ * gets the latest one. Route interception sees only the first request of a
+ * redirect chain, and the proxy only each hop's host, so without this a page
+ * that redirects to /logout?token=… would be requested by the browser.
+ */
+async function guardNavigation(
+  context: PwContext,
+  page: PwPage,
+  config: () => FetchConfig,
+  refused: (navigation: RefusedNavigation) => void,
+): Promise<void> {
+  const session = await context.newCDPSession(page);
+  const { frameTree } = (await session.send("Page.getFrameTree")) as { frameTree: { frame: { id: string } } };
+  const top = frameTree.frame.id;
+  session.on("Fetch.requestPaused", (event) => {
+    const check = event.frameId === top ? checkUrl(event.request.url, config()) : { ok: true as const };
+    if (check.ok) {
+      session.send("Fetch.continueRequest", { requestId: event.requestId }).catch(() => undefined);
+      return;
+    }
+    refused({ url: event.request.url, reason: check.reason });
+    session.send("Fetch.failRequest", { requestId: event.requestId, errorReason: "BlockedByClient" }).catch(() => undefined);
+  });
+  await session.send("Fetch.enable", { patterns: [{ urlPattern: "*", resourceType: "Document", requestStage: "Request" }] });
+}
 
 /** Requests the browser never makes: nothing in them is text. */
 const BLOCKED_TYPES = new Set(["image", "media", "font"]);
@@ -203,7 +241,21 @@ export interface PlaywrightModule {
 interface PwContext {
   route(url: string, handler: (route: PwRoute) => unknown): Promise<void>;
   newPage(): Promise<PwPage>;
+  newCDPSession(page: PwPage): Promise<PwCDPSession>;
   close(): Promise<void>;
+}
+
+/** A DevTools protocol session for one page (Chromium only, which is all mnemos launches). */
+interface PwCDPSession {
+  send(method: string, params?: Record<string, unknown>): Promise<unknown>;
+  on(event: "Fetch.requestPaused", handler: (event: RequestPaused) => void): void;
+}
+
+/** The parts of the protocol's Fetch.requestPaused event used here. */
+interface RequestPaused {
+  requestId: string;
+  request: { url: string };
+  frameId: string;
 }
 
 interface PwRoute {
@@ -386,6 +438,8 @@ export class HeadlessBrowser implements PageRenderer {
   async render(url: string, options: { config: FetchConfig; signal?: AbortSignal }): Promise<FetchOutcome> {
     this.config = options.config;
     const started = Date.now();
+    const first = checkUrl(url, options.config);
+    if (!first.ok) return { status: "skipped", reason: first.reason, url };
     const launched = await this.launch();
     if (!launched.ok) return { status: "failed", reason: "connection", url, detail: launched.reason };
     const running = (await this.running) as Running;
@@ -396,12 +450,21 @@ export class HeadlessBrowser implements PageRenderer {
     signal?.addEventListener("abort", closePage, { once: true });
     const remaining = () => Math.max(1, this.timeoutMs - (Date.now() - started));
     let current = url;
+    let refused: RefusedNavigation | undefined;
     try {
       page = await running.context.newPage();
       // A window the page opens is closed: only the page itself is rendered.
       page.on("popup", (popup) => void popup.close().catch(() => undefined));
+      await guardNavigation(running.context, page, () => this.config, (navigation) => (refused = navigation));
       if (signal?.aborted) return { status: "failed", reason: "aborted", url };
-      const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: remaining() });
+      let response: { status(): number } | null;
+      try {
+        response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: remaining() });
+      } catch (err) {
+        // A redirect the policy refused: skipped, as safeFetch skips it.
+        if (refused) return { status: "skipped", reason: refused.reason, url: refused.url };
+        throw err;
+      }
       current = page.url();
       const code = response?.status() ?? 200;
       if (code === 403 || code === 429) return { status: "refused", httpStatus: code, url: current };

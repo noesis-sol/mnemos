@@ -107,7 +107,7 @@ export class PolicyProxy {
   /** The fetch policy for a connection to `url`'s host: checkUrl, then every DNS answer. */
   private async check(url: URL): Promise<Check> {
     const config = this.config();
-    // The host and port only: a tunnel shows nothing more, and the browser's route checks paths.
+    // The host and port only: a tunnel shows nothing more, and headless.ts checks the page's paths.
     const origin = new URL(`${url.protocol}//${url.host}/`);
     const policy = checkUrl(origin, config);
     if (!policy.ok) return { ok: false, reason: policy.reason };
