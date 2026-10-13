@@ -6,7 +6,7 @@
 
 *mnemos* (from the Greek **μνήμη** — memory) is a local, read-only
 [MCP](https://modelcontextprotocol.io) server that gives AI assistants access to your
-Chrome bookmarks — not as a pile of links, but as a curated signal of what you
+browser bookmarks (Chrome, Edge, Brave, Vivaldi, Chromium, Firefox or Safari) — not as a pile of links, but as a curated signal of what you
 consider important, which sources you trust, and which opinions you endorse.
 
 [![npm](https://img.shields.io/npm/v/mnemos-mcp?logo=npm&color=CB3837)](https://www.npmjs.com/package/mnemos-mcp)
@@ -35,24 +35,31 @@ mnemos hands that context to your AI assistant, so instead of generic answers yo
 
 ```mermaid
 flowchart LR
-    A[Chrome Bookmarks file] -->|read-only| B[mnemos]
+    A[Browser bookmarks file] -->|read-only| B[mnemos]
     B -->|MCP over stdio| C[Claude Code / Claude Desktop / any MCP client]
     C --> D{{"What does the user care about?"}}
 ```
 
-mnemos reads Chrome's `Bookmarks` JSON file directly from disk on every call —
-always fresh, no sync, no cache, no writes, no network. It speaks MCP over
-stdio, so it works with any MCP client.
+mnemos reads your browser's bookmarks directly from disk on every call — always
+fresh, no sync, no writes, no network. Chromium-based browsers keep a `Bookmarks`
+JSON file; Firefox keeps a `places.sqlite` database, which it locks while it runs,
+so mnemos copies it to a temporary directory, reads the copy and keeps the result
+in memory until the database changes; Safari keeps a binary `Bookmarks.plist`.
+It speaks MCP over stdio, so it works with any MCP client.
 
 ## Tools
 
 | Tool | What it tells your assistant |
 |------|------------------------------|
-| 🔍 `search_bookmarks(query, folder?, limit?)` | Has the user saved material on this topic? Every query word must match the title, URL, or folder path, at the start of a word — `kubernet` finds *Kubernetes*, `ai` doesn't match *Gmail*. |
+| 🔍 `search_bookmarks(query, folder?, limit?)` | Has the user saved material on this topic? Every query word must match the title, URL, folder path or description, at the start of a word — `kubernet` finds *Kubernetes*, `ai` doesn't match *Gmail*. |
 | 🗂 `list_folders()` | The user's own taxonomy of interests — every folder, with direct and subtree counts. |
 | 📁 `list_folder_contents(folder, limit?)` | Everything saved under a topic (whole-word folder matching, subfolders included). |
 | 🕐 `recent_bookmarks(limit?)` | What the user is focused on right now, newest first. |
 | 🌐 `top_domains(limit?)` | The sources the user trusts and returns to, ranked by bookmark count. |
+
+Bookmarks carry a `description` where the browser stores one: Vivaldi's bookmark
+descriptions, Firefox's (the one typed in older Firefox's bookmark dialog, else the
+page's own description Firefox saved), and the preview text of Safari's Reading List.
 
 Every tool that can truncate reports a `total_matches` count, so the assistant
 always knows when it is looking at a partial list. Defaults return up to 100
@@ -91,14 +98,33 @@ Then ask things like:
 
 | Environment variable | Default | Purpose |
 |----------------------|---------|---------|
-| `CHROME_PROFILE` | `Default` | Chrome profile directory name (e.g. `Profile 3`) |
-| `CHROME_BOOKMARKS_PATH` | — | Absolute path to any `Bookmarks` file; overrides the profile |
+| `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chromium`, `edge`, `brave`, `vivaldi`, `firefox` or `safari` |
+| `CHROME_PROFILE` | `Default` | Profile directory name (e.g. `Profile 3`); for Firefox, the profile's name (default: the one Firefox opens) |
+| `CHROME_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the two above |
 
-> Profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
+For example, `claude mcp add --scope user mnemos -e MNEMOS_BOOKMARKS_BROWSER=firefox -- npx -y mnemos-mcp`.
+
+> Chrome profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
 > `%LOCALAPPDATA%\Google\Chrome\User Data` (Windows), and
 > `~/.config/google-chrome` (Linux). Directory names are `Default`,
 > `Profile 1`, `Profile 2`, … — **not** the display names you see in
 > Chrome's UI.
+
+| Browser | macOS | Windows | Linux |
+|---------|-------|---------|-------|
+| Edge | `~/Library/Application Support/Microsoft Edge` | `%LOCALAPPDATA%\Microsoft\Edge\User Data` | `~/.config/microsoft-edge` |
+| Brave | `~/Library/Application Support/BraveSoftware/Brave-Browser` | `%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data` | `~/.config/BraveSoftware/Brave-Browser` |
+| Vivaldi | `~/Library/Application Support/Vivaldi` | `%LOCALAPPDATA%\Vivaldi\User Data` | `~/.config/vivaldi` |
+| Chromium | `~/Library/Application Support/Chromium` | `%LOCALAPPDATA%\Chromium\User Data` | `~/.config/chromium` |
+| Firefox | `~/Library/Application Support/Firefox` | `%APPDATA%\Mozilla\Firefox` | `~/.mozilla/firefox`, `~/.config/mozilla/firefox`, Snap or Flatpak |
+| Safari | `~/Library/Safari/Bookmarks.plist` | — | — |
+
+> **Firefox** needs Node 22.13 or later (mnemos reads `places.sqlite` with
+> `node:sqlite`). Profiles are those listed in `profiles.ini`.
+>
+> **Safari**: macOS lets only apps with *Full Disk Access* read Safari's
+> bookmarks. Add the app that runs mnemos — your terminal for Claude Code, or
+> Claude Desktop — in System Settings › Privacy & Security › Full Disk Access.
 
 If the profile has no bookmarks file, mnemos tells the assistant which profiles
 do — no cryptic tracebacks.
@@ -107,7 +133,7 @@ do — no cryptic tracebacks.
 
 - **Read-only.** mnemos never modifies your bookmarks file.
 - **Local-only.** No network calls, no telemetry — data goes from disk to your MCP client and nowhere else.
-- **Zero state.** The file is re-read per call, so results always reflect what's in Chrome right now.
+- **Zero state.** The file is re-read per call (Firefox's whenever it has changed), so results always reflect what's in your browser right now.
 - **One file.** The whole server is [`src/index.ts`](src/index.ts) — auditable in five minutes.
 
 ## Development
@@ -128,7 +154,7 @@ CI runs the suite on macOS, Windows, and Linux across Node 22 and 24.
 ---
 
 <div align="center">
-<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Google Chrome on macOS, Windows, and Linux; PRs for other Chromium-based browsers welcome.</sub>
+<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Chrome, Edge, Brave, Vivaldi, Chromium and Firefox on macOS, Windows, and Linux, and with Safari on macOS.</sub>
 <br>
 <sub>MIT © Michail Michailidis</sub>
 </div>

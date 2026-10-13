@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * mnemos — MCP server exposing the user's Chrome bookmarks (read-only).
+ * mnemos — MCP server exposing the user's browser bookmarks (read-only).
  *
  * The user's bookmarks are a curated signal of what they consider important,
  * trustworthy, and worth endorsing. This server lets an AI assistant consult
@@ -8,8 +8,12 @@
  * of, and what they have been saving recently.
  *
  * Environment variables:
- *   CHROME_PROFILE        Chrome profile directory name (default: "Default")
- *   CHROME_BOOKMARKS_PATH Absolute path to a Bookmarks file (overrides the above)
+ *   MNEMOS_BOOKMARKS_BROWSER chrome (default), chromium, edge, brave, vivaldi,
+ *                            firefox or safari
+ *   CHROME_PROFILE           Profile directory name (default: "Default"), or
+ *                            for Firefox the profile name (default: Firefox's)
+ *   CHROME_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
+ *                            file (overrides the above)
  *
  * All logic lives in lib.ts; this file is MCP wiring only.
  */
@@ -40,7 +44,7 @@ const server = new McpServer(
   { name: "mnemos", version: VERSION, icons: ICONS },
   {
     instructions:
-      "Read-only access to the user's Chrome bookmarks. Bookmarks are things " +
+      "Read-only access to the user's browser bookmarks. Bookmarks are things " +
       "the user deliberately saved: treat them as a map of what the user " +
       "considers important and which sources/opinions they endorse. Folder " +
       "names indicate topics of interest. Use search_bookmarks to check " +
@@ -55,15 +59,18 @@ server.registerTool(
   {
     title: "Search bookmarks",
     description:
-      "Search the user's bookmarks by title, URL, and folder path. Use this " +
-      "to check whether the user has saved material about a topic — a hit " +
-      "means the user found that page important or agreeable. Every word in " +
-      "`query` must appear in the title, URL, or folder path (case-" +
+      "Search the user's bookmarks by title, URL, folder path and description. " +
+      "Use this to check whether the user has saved material about a topic — " +
+      "a hit means the user found that page important or agreeable. Every " +
+      "word in `query` must appear in the title, URL, folder path or " +
+      "description (case-" +
       "insensitive), matching at the start of a word: 'kubernet' finds " +
       "'Kubernetes', but 'ai' does not match 'Gmail'. Note: because the " +
       "folder path is searched too, a topic word matches everything filed " +
       "under a folder of that name. Optionally restrict to folders whose name " +
-      "matches `folder` (whole-word match). Returns JSON with " +
+      "matches `folder` (whole-word match). Bookmarks carry a `description` " +
+      "only where the browser stores one (Vivaldi, Firefox, Safari's Reading " +
+      "List). Returns JSON with " +
       "`total_matches`; if it exceeds `limit`, the list is truncated — do not " +
       "assume the returned items are all there is.",
     inputSchema: {

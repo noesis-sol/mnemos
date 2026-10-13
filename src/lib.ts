@@ -1,14 +1,33 @@
 /**
  * mnemos core logic — everything except MCP wiring, so it is unit-testable
  * without spawning a server. All functions that touch the filesystem resolve
- * paths through the CHROME_BOOKMARKS_PATH / CHROME_PROFILE environment
- * variables, which is also how tests inject fixtures.
+ * paths through the CHROME_BOOKMARKS_PATH / CHROME_PROFILE /
+ * MNEMOS_BOOKMARKS_BROWSER environment variables, which is also how tests
+ * inject fixtures. Where each browser keeps its bookmarks, and the readers for
+ * Firefox's and Safari's formats, live in browsers.ts.
  */
 
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { domainToUnicode } from "node:url";
+import {
+  BROWSER_ENV,
+  BROWSER_NAMES,
+  browsersWithBookmarks,
+  chromiumBase,
+  chromiumProfilesWithBookmarks,
+  firefoxBase,
+  firefoxPlacesPath,
+  firefoxProfilesWithBookmarks,
+  isChromium,
+  isSqlite,
+  readFirefoxRoots,
+  readSafariRoots,
+  safariBookmarksPath,
+  selectedBrowser,
+  type Browser,
+} from "./browsers.js";
+import { isBinaryPlist } from "./plist.js";
 
 export interface BookmarkNode {
   type?: string;
@@ -16,6 +35,10 @@ export interface BookmarkNode {
   url?: string;
   date_added?: string;
   children?: BookmarkNode[];
+  /** Chromium's per-node metadata; Vivaldi keeps a bookmark's description here. */
+  meta_info?: Record<string, unknown>;
+  /** Set by the Firefox and Safari readers when the browser stores a description. */
+  description?: string;
 }
 
 export interface Entry {
@@ -30,66 +53,112 @@ export function chromeBase(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  switch (platform) {
-    case "darwin":
-      return path.join(os.homedir(), "Library", "Application Support", "Google", "Chrome");
-    // `||`, not `??`: an env var set to the empty string means "unset" (the
-    // XDG spec says so explicitly), and `??` would let it through and build a
-    // relative path that silently resolves against the process's cwd.
-    case "win32":
-      return path.join(
-        env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"),
-        "Google",
-        "Chrome",
-        "User Data",
-      );
-    default: // linux and other unixes
-      return path.join(
-        env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
-        "google-chrome",
-      );
-  }
+  return chromiumBase("chrome", platform, env);
 }
 
+/**
+ * The bookmarks file to read: CHROME_BOOKMARKS_PATH if set, else the file of
+ * the browser MNEMOS_BOOKMARKS_BROWSER names (Chrome by default), in the
+ * profile CHROME_PROFILE names.
+ */
 export function bookmarksPath(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): string {
   const override = env.CHROME_BOOKMARKS_PATH;
   if (override) return override;
+  const browser = selectedBrowser(env);
+  if (browser === "firefox") return firefoxPlacesPath(env, platform);
+  if (browser === "safari") return safariBookmarksPath();
   const profile = env.CHROME_PROFILE || "Default"; // empty string → Default
-  return path.join(chromeBase(platform, env), profile, "Bookmarks");
+  return path.join(chromiumBase(browser, platform, env), profile, "Bookmarks");
 }
 
-export function loadRoots(): Record<string, BookmarkNode> {
-  const file = bookmarksPath();
-  let raw: string;
+/** The first 16 bytes of a file: enough to tell SQLite and plist files from JSON. */
+function readHead(file: string): Buffer {
+  const fd = fs.openSync(file, "r");
   try {
-    raw = fs.readFileSync(file, "utf-8");
-  } catch {
-    const base = chromeBase();
-    let available: string[] = [];
-    try {
-      available = fs
-        .readdirSync(base)
-        .filter((d) => fs.existsSync(path.join(base, d, "Bookmarks")))
-        .sort();
-    } catch {
-      // base dir itself missing — fall through with empty list
-    }
-    throw new Error(
+    const head = Buffer.alloc(16);
+    return head.subarray(0, fs.readSync(fd, head, 0, 16, 0));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** The error for a bookmarks file that cannot be read, naming where to look instead. */
+function unreadable(browser: Browser, file: string, error: unknown): Error {
+  const code = (error as NodeJS.ErrnoException).code;
+  let message: string;
+  if (browser === "safari" && (code === "EPERM" || code === "EACCES")) {
+    message =
+      `macOS did not let mnemos read ${file}. Safari's bookmarks are readable only by apps ` +
+      "with Full Disk Access: add the app that runs mnemos (your terminal or MCP client) in " +
+      "System Settings › Privacy & Security › Full Disk Access, then restart it.";
+  } else if (browser === "safari" && process.platform !== "darwin") {
+    message = `No bookmarks file at ${file}: Safari keeps its bookmarks only on macOS.`;
+  } else if (browser === "safari") {
+    message = `No bookmarks file at ${file}. Set CHROME_BOOKMARKS_PATH to a Safari Bookmarks.plist.`;
+  } else if (browser === "firefox") {
+    const available = firefoxProfilesWithBookmarks(firefoxBase());
+    message =
       `No bookmarks file at ${file}. ` +
-        `Chrome profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
-        "Set CHROME_PROFILE (profile directory name) or CHROME_BOOKMARKS_PATH.",
+      `Firefox profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
+      "Set CHROME_PROFILE (Firefox profile name) or CHROME_BOOKMARKS_PATH.";
+  } else {
+    const available = chromiumProfilesWithBookmarks(chromiumBase(browser));
+    message =
+      `No bookmarks file at ${file}. ` +
+      `${BROWSER_NAMES[browser]} profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
+      "Set CHROME_PROFILE (profile directory name) or CHROME_BOOKMARKS_PATH.";
+  }
+  const others = browsersWithBookmarks(browser);
+  if (others.length > 0) {
+    message +=
+      ` Other browsers with bookmarks here: ${others.map((b) => BROWSER_NAMES[b]).join(", ")}` +
+      ` (set ${BROWSER_ENV} to ${others.join(", ")}).`;
+  }
+  return new Error(message);
+}
+
+/**
+ * The root folders of the bookmarks file, keyed by root name. The file's
+ * format is read from its first bytes, so CHROME_BOOKMARKS_PATH can point at
+ * any supported browser's file: Chromium JSON, Firefox's places.sqlite or
+ * Safari's binary Bookmarks.plist.
+ */
+export function loadRoots(): Record<string, BookmarkNode> {
+  const browser = selectedBrowser();
+  const file = bookmarksPath();
+  let head: Buffer;
+  try {
+    head = readHead(file);
+  } catch (e) {
+    throw unreadable(browser, file, e);
+  }
+  if (isSqlite(head)) return readFirefoxRoots(file);
+  let data: Buffer;
+  try {
+    data = fs.readFileSync(file);
+  } catch (e) {
+    throw unreadable(browser, file, e);
+  }
+  if (isBinaryPlist(head)) return readSafariRoots(file, data);
+  if (data.toString("latin1", 0, 5) === "<?xml") {
+    throw new Error(
+      `File at ${file} is not a binary property list. Safari writes Bookmarks.plist in ` +
+        "binary form; convert an XML copy with `plutil -convert binary1 <file>`.",
     );
   }
+  // Chromium JSON. A bookmarks file read through CHROME_BOOKMARKS_PATH is
+  // named after the selected browser, which is Chrome unless set otherwise.
+  const name = isChromium(browser) ? BROWSER_NAMES[browser] : "The browser";
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(data.toString("utf-8"));
   } catch (e) {
     throw new Error(
       `Bookmarks file at ${file} is not valid JSON (${e}). ` +
-        "Chrome may be mid-write; retry in a moment.",
+        `${name} may be mid-write; retry in a moment.`,
     );
   }
   // Valid JSON is not enough: pointing CHROME_BOOKMARKS_PATH at the wrong file
@@ -103,8 +172,9 @@ export function loadRoots(): Record<string, BookmarkNode> {
   if (!looksLikeChrome) {
     throw new Error(
       `File at ${file} is not a Chrome Bookmarks file: no "roots" object containing ` +
-        "bookmark folders. Point CHROME_BOOKMARKS_PATH at Chrome's 'Bookmarks' file " +
-        "(no extension), or set CHROME_PROFILE instead.",
+        "bookmark folders. Point CHROME_BOOKMARKS_PATH at a Chromium browser's 'Bookmarks' " +
+        "file (no extension), Firefox's places.sqlite or Safari's Bookmarks.plist, or set " +
+        "CHROME_PROFILE instead.",
     );
   }
   return roots as Record<string, BookmarkNode>;
@@ -151,6 +221,21 @@ function isFolderNode(node: BookmarkNode): boolean {
   return node.type === "folder" || (node.type === undefined && Array.isArray(node.children));
 }
 
+// Vivaldi keeps deleted bookmarks in a Trash folder inside the bookmark tree,
+// marked in its meta_info. They are not bookmarks the user still keeps.
+function isTrash(node: BookmarkNode): boolean {
+  return node.meta_info?.Trash === "true";
+}
+
+/**
+ * The description the browser stores for a bookmark, if any: Vivaldi's
+ * meta_info.Description, or what the Firefox and Safari readers found.
+ */
+export function describe(node: BookmarkNode): string | undefined {
+  const value = node.description ?? node.meta_info?.Description;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 /**
  * A traversal step. Folders are reported as well as bookmarks so that
  * list_folders can show folders that hold only subfolders, or nothing at all.
@@ -179,7 +264,7 @@ function* walk(root: BookmarkNode, rootPath: string): Generator<Visit> {
       const child = children[i];
       if (isUrlNode(child)) {
         stack.push({ node: child, folder });
-      } else if (isFolderNode(child)) {
+      } else if (isFolderNode(child) && !isTrash(child)) {
         stack.push({ node: child, folder: `${folder}${SEP}${child.name ?? ""}` });
       }
       // Anything that is neither is not a bookmark node — skip it silently.
@@ -199,7 +284,7 @@ export function* walkAll(): Generator<Visit> {
     // "sync_transaction_version" string). Requiring a folder-shaped node keeps
     // those out — they would otherwise show up as folders in list_folders,
     // which now reports folders that hold nothing.
-    if (root && typeof root === "object" && isFolderNode(root)) {
+    if (root && typeof root === "object" && isFolderNode(root) && !isTrash(root)) {
       yield* walk(root, ROOT_LABELS[key] ?? key);
     }
   }
@@ -254,17 +339,22 @@ function wordStart(word: string): RegExp {
 // mangled — only junk gets clipped.
 const MAX_TITLE = 500;
 const MAX_URL = 2048;
+const MAX_DESCRIPTION = 1000;
 
 function clip(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
 }
 
 export function fmt(entry: Entry) {
+  const description = describe(entry.node);
   return {
     title: clip(entry.node.name ?? "", MAX_TITLE),
     url: clip(entry.node.url ?? "", MAX_URL),
     folder: entry.folder,
     added: chromeTimeToIso(entry.node.date_added),
+    // Only browsers that store one have it, so it is left out rather than
+    // repeated as null on every Chrome bookmark.
+    ...(description === undefined ? {} : { description: clip(description, MAX_DESCRIPTION) }),
   };
 }
 
@@ -298,8 +388,8 @@ export function searchBookmarks(query: string, folder?: string, limit?: number):
   const matches = [];
   for (const entry of allBookmarks()) {
     if (filter && !folderMatches(entry.folder, filter)) continue;
-    const haystack =
-      `${entry.node.name ?? ""} ${entry.node.url ?? ""} ${entry.folder}`.toLowerCase();
+    const { name = "", url = "" } = entry.node;
+    const haystack = `${name} ${url} ${entry.folder} ${describe(entry.node) ?? ""}`.toLowerCase();
     if (patterns.every((p) => p.test(haystack))) {
       matches.push(fmt(entry));
     }

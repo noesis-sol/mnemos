@@ -5,3 +5,6 @@
 
 # Inlined into src/icon.ts byte for byte: never convert.
 *.png binary
+
+# Binary property-list fixtures (Safari bookmarks): never convert.
+*.plist binary

@@ -1,7 +1,7 @@
 {
   "name": "mnemos-mcp",
   "version": "0.3.1",
-  "description": "Read-only MCP server exposing local Chrome bookmarks as a signal of what the user values and endorses",
+  "description": "Read-only MCP server exposing local browser bookmarks (Chrome, Edge, Brave, Vivaldi, Firefox, Safari) as a signal of what the user values and endorses",
   "type": "module",
   "bin": {
     "mnemos-mcp": "dist/index.js"
@@ -27,6 +27,11 @@
     "model-context-protocol",
     "mcp-server",
     "chrome",
+    "edge",
+    "brave",
+    "vivaldi",
+    "firefox",
+    "safari",
     "bookmarks",
     "claude",
     "ai"

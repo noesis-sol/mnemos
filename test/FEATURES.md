@@ -150,6 +150,43 @@ root entry and that matrix in step.
 - **Untested**: corruption that appears while a store is open (callers see `isCorrupt` errors
   and reopen); two processes, rather than two stores in one process, sharing the lease.
 
+## Other browsers and descriptions
+
+- **Reached by**: `MNEMOS_BOOKMARKS_BROWSER` (`chrome`, `chromium`, `edge`, `brave`, `vivaldi`,
+  `firefox`, `safari`); `CHROME_PROFILE` (for Firefox, a profile name from `profiles.ini`);
+  `CHROME_BOOKMARKS_PATH` pointing at any supported file, its format read from its first bytes;
+  `src/browsers.ts` (paths, Firefox's `places.sqlite` through `node:sqlite` on a temporary copy,
+  Safari's `Bookmarks.plist`), `src/plist.ts` (binary plist reader), `lib.loadRoots`,
+  `lib.describe`; the `description` field in every tool's bookmarks and in `search_bookmarks`'
+  haystack.
+- **Tests**: `test/browsers.test.js` (unit, against a fake home): browser choice (default,
+  case, unknown value); each Chromium browser's directory per platform; Edge, Brave, Vivaldi and
+  Chromium reading their profile's file; the missing-profile error naming the browser's profiles
+  and the other browsers with bookmarks; Vivaldi's `meta_info.Description` returned, trimmed,
+  clipped and searched, blank ones left out, its Trash folder skipped; Chrome bookmarks without a
+  `description`. Firefox: directory per platform (Linux candidates in order); `profiles.ini`
+  default (Install section, then `Default=1`), relative and absolute paths, profile by name,
+  directory or case-insensitive name; errors for no `profiles.ini`, an unknown profile and a
+  profile without `places.sqlite`; roots, folder paths, `position` order, separators, `place:`
+  queries and the tags root skipped; dates, the page-title fallback, the user's description
+  beating the page's; writes still in the WAL read while another connection holds the database,
+  the original directory and file untouched, a later write seen on the next call; a non-Firefox
+  SQLite file; `places.sqlite` through `CHROME_BOOKMARKS_PATH` (Firefox tests skip without
+  `node:sqlite`). Safari: roots under Safari's names, History proxy skipped, top-level bookmarks
+  in `Bookmarks`, Greek folders; Reading List date and preview text; missing file (per
+  platform), `EPERM` naming Full Disk Access, XML, truncated and non-Safari plists.
+  `test/plist.test.js` (unit): a fixture written by Python's `plistlib`
+  (`test/fixtures/make-safari-bookmarks.py`) decodes to the right dicts, UTF-16 strings, date,
+  data, integers, real and boolean; hand-built files for integer widths, UIDs, long strings,
+  shared objects, cycles, nesting past the limit and malformed files.
+  `test/browsers-server.test.js` (e2e): a Safari plist searched over MCP with its description;
+  an unknown browser is `isError`.
+- **Untested**: real browsers' files (checked by hand on macOS against Chrome, Firefox and
+  Safari libraries on 2026-10-13); the "needs Node 22.13" error on older Node; Vivaldi's Trash
+  marker (`meta_info.Trash`) against a real Vivaldi file; Edge, Brave and Vivaldi on Windows and
+  Linux.
+- **Tickets**: mnemos-xp1
+
 ## Tool errors over MCP
 
 - **Reached by**: any tool call; `safely()` in `src/index.ts` turns a thrown error into an
