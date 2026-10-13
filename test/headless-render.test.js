@@ -148,7 +148,9 @@ test("e2e: a page built by JavaScript ends ok with its text; requests to a block
       return row && !["pending", "needs_browser"].includes(row.status) ? row : null;
     }, "the page to be rendered");
     // The browser closes once no page needs it, and its profile goes with it.
-    await until(() => fs.readdirSync(profiles).length === 0, "the temporary profile to be deleted", 15_000);
+    // Closing Chromium can take many seconds on a loaded machine, so this
+    // gets the same generous wait as the render itself.
+    await until(() => fs.readdirSync(profiles).length === 0, "the temporary profile to be deleted");
   } finally {
     fetcher.stop();
     await renderer.close();
