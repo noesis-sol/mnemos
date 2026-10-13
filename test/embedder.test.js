@@ -209,7 +209,7 @@ test("absent: with the package unresolvable, the server still starts and answers
     new StdioClientTransport({
       command: process.execPath,
       args: ["--import", pathToFileURL(register).href, path.join(ROOT, "dist", "index.js")],
-      env: { ...process.env, CHROME_BOOKMARKS_PATH: FIXTURE, MNEMOS_CACHE_DIR: dir },
+      env: { ...process.env, CHROME_BOOKMARKS_PATH: FIXTURE, MNEMOS_CACHE_DIR: dir, MNEMOS_FETCH_PAGES: "0" },
       stderr: "ignore",
     }),
   );

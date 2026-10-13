@@ -14,6 +14,8 @@
  *                            for Firefox the profile name (default: Firefox's)
  *   CHROME_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
  *                            file (overrides the above)
+ *   MNEMOS_FETCH_PAGES       0 turns off fetching bookmarked pages in the
+ *                            background (fetcher.ts)
  *
  * All logic lives in lib.ts; this file is MCP wiring only.
  */
@@ -26,6 +28,7 @@ import * as lib from "./lib.js";
 import { ICONS } from "./icon.js";
 import { createEmbedder } from "./embedder.js";
 import { Indexer } from "./indexer.js";
+import { Fetcher } from "./fetcher.js";
 import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
 
 const require = createRequire(import.meta.url);
@@ -58,6 +61,8 @@ async function safelyAsync(fn: () => Promise<unknown>): Promise<ToolResult> {
 const embedder = createEmbedder();
 /** Embeds bookmark titles in the background; semantic_search reads what it stores. */
 const indexer = new Indexer({ embedder });
+/** Fetches bookmarked pages and stores their text, in the one process holding the fetcher lease. */
+const fetcher = new Fetcher();
 
 const server = new McpServer(
   { name: "mnemos", version: VERSION, icons: ICONS },
@@ -124,7 +129,9 @@ server.registerTool(
       "and if it exceeds `limit` the list is truncated. `status` reports " +
       "indexing progress (\"titles x/N · pages y/N\"), the embedding model's " +
       "state and whether page fetching is disabled; while the model is not " +
-      "ready, results are keyword matches only and `status.note` says why.",
+      "ready, results are keyword matches only and `status.note` says why. " +
+      "`status.fetching` says what the background page fetcher is doing. A " +
+      "`notice`, when present, is a one-time message for the user: pass it on.",
     inputSchema: {
       query: z.string().describe("What to look for, in any words or language"),
       folder: z
@@ -139,7 +146,7 @@ server.registerTool(
     },
   },
   async ({ query, folder, limit }) =>
-    safelyAsync(() => semanticSearch({ embedder, indexer }, query, folder, limit)),
+    safelyAsync(() => semanticSearch({ embedder, indexer, fetcher }, query, folder, limit)),
 );
 
 server.registerTool(
@@ -215,10 +222,26 @@ server.registerTool(
 );
 
 
+/** Aborts the fetches in flight and gives the fetcher lease up, so another mnemos can take over. */
+function shutdown(): void {
+  fetcher.stop();
+}
+
 async function main(): Promise<void> {
+  // The client closing stdin is how an MCP server is told to exit.
+  process.stdin.once("end", shutdown);
+  process.stdin.once("close", shutdown);
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      shutdown();
+      process.exit(0);
+    });
+  }
   await server.connect(new StdioServerTransport());
   // After connect, and on a later tick: the handshake never waits for indexing.
   indexer.start();
+  // Pages after titles: the title pass is what makes semantic_search useful first.
+  void indexer.idle().then(() => fetcher.start());
 }
 
 main().catch((e) => {

@@ -24,13 +24,16 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** Bump when the schema changes, and add a step to MIGRATIONS if the old data is worth keeping. */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /**
  * Steps from version n to n+1, keyed by n. A file whose version has no path
  * to SCHEMA_VERSION here (including one from a newer mnemos) is rebuilt.
  */
-const MIGRATIONS: Record<number, (db: DatabaseSync) => void> = {};
+const MIGRATIONS: Record<number, (db: DatabaseSync) => void> = {
+  // 2: the fetcher stores each page's extracted text.
+  1: (db) => db.exec("ALTER TABLE pages ADD COLUMN text TEXT"),
+};
 
 export type PageStatus =
   | "pending"
@@ -66,6 +69,8 @@ export interface PageRow {
   next_attempt_at?: number | null;
   content_hash?: string | null;
   reason?: string | null;
+  /** The page's extracted text (status ok); undefined leaves the stored text as it is, null clears it. */
+  text?: string | null;
 }
 
 export interface StoredChunk {
@@ -204,7 +209,8 @@ CREATE TABLE pages (
   fail_count INTEGER NOT NULL DEFAULT 0,
   next_attempt_at INTEGER,
   content_hash TEXT,
-  reason TEXT
+  reason TEXT,
+  text TEXT
 );
 CREATE TABLE chunks (
   url TEXT NOT NULL,
@@ -367,6 +373,17 @@ export class IndexStore {
       .run(key, value);
   }
 
+  /** Sets the key only if it is not set; returns whether it was set now. */
+  addMeta(key: string, value: string): boolean {
+    return this.db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)").run(key, value).changes === 1;
+  }
+
+  /** Deletes the key and returns the value it had: of several processes taking it, only one gets it. */
+  takeMeta(key: string): string | undefined {
+    const row = this.db.prepare("DELETE FROM meta WHERE key = ? RETURNING value").get(key);
+    return row ? (row.value as string) : undefined;
+  }
+
   /**
    * Records the running embedder. If the index was built with another model
    * or revision, every vector is dropped (the rows stay, to be embedded
@@ -517,12 +534,13 @@ export class IndexStore {
   upsertPage(page: PageRow): void {
     this.db
       .prepare(
-        `INSERT INTO pages (url, status, final_url, fetched_at, fail_count, next_attempt_at, content_hash, reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO pages (url, status, final_url, fetched_at, fail_count, next_attempt_at, content_hash, reason, text)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
          ON CONFLICT(url) DO UPDATE SET
            status = excluded.status, final_url = excluded.final_url, fetched_at = excluded.fetched_at,
            fail_count = excluded.fail_count, next_attempt_at = excluded.next_attempt_at,
-           content_hash = excluded.content_hash, reason = excluded.reason`,
+           content_hash = excluded.content_hash, reason = excluded.reason,
+           text = CASE WHEN ?10 THEN pages.text ELSE excluded.text END`,
       )
       .run(
         page.url,
@@ -533,12 +551,59 @@ export class IndexStore {
         page.next_attempt_at ?? null,
         page.content_hash ?? null,
         page.reason ?? null,
+        page.text ?? null,
+        // ?10: the row passes no text, so the stored one stays.
+        page.text === undefined ? 1 : 0,
       );
   }
 
   getPage(url: string): Required<PageRow> | undefined {
     const row = this.db.prepare("SELECT * FROM pages WHERE url = ?").get(url);
     return row ? toPage(row) : undefined;
+  }
+
+  /**
+   * Adds a pending page for every http(s) URL a bookmark has and no page row
+   * has yet; returns how many were added.
+   */
+  addPendingPages(): number {
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO pages (url, status)
+         SELECT DISTINCT url, 'pending' FROM bookmarks
+         WHERE lower(substr(url, 1, 7)) = 'http://' OR lower(substr(url, 1, 8)) = 'https://'`,
+      )
+      .run();
+    return Number(result.changes);
+  }
+
+  /** Every page with its status and reason (no text): what the fetcher re-checks against the policy. */
+  pageStates(): { url: string; status: PageStatus; reason: string | null }[] {
+    return this.db
+      .prepare("SELECT url, status, reason FROM pages ORDER BY url")
+      .all()
+      .map((r) => ({ url: r.url as string, status: r.status as PageStatus, reason: r.reason as string | null }));
+  }
+
+  /** The URLs of pages to fetch now: pending ones, and those whose next attempt is due at `now`. */
+  duePages(now: number): string[] {
+    return this.db
+      .prepare(
+        `SELECT url FROM pages
+         WHERE status = 'pending' OR (next_attempt_at IS NOT NULL AND next_attempt_at <= ?)
+         ORDER BY url`,
+      )
+      .all(now)
+      .map((r) => r.url as string);
+  }
+
+  /** How many pages are in each status. */
+  pageCounts(): Partial<Record<PageStatus, number>> {
+    const counts: Partial<Record<PageStatus, number>> = {};
+    for (const row of this.db.prepare("SELECT status, COUNT(*) AS n FROM pages GROUP BY status").all()) {
+      counts[row.status as PageStatus] = Number(row.n);
+    }
+    return counts;
   }
 
   /** Replaces the page's chunks; the new ones have no vectors yet. */
@@ -667,6 +732,7 @@ function toPage(row: Record<string, unknown>): Required<PageRow> {
     next_attempt_at: num(row.next_attempt_at),
     content_hash: row.content_hash as string | null,
     reason: row.reason as string | null,
+    text: row.text as string | null,
   };
 }
 

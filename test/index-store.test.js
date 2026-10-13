@@ -392,6 +392,7 @@ test("pages: upsert and read back, with defaults", () => {
     next_attempt_at: null,
     content_hash: null,
     reason: null,
+    text: null,
   });
   store.upsertPage({
     url: "https://a.example/",

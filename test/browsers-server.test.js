@@ -16,7 +16,8 @@ const SAFARI_FIXTURE = path.join(ROOT, "test", "fixtures", "safari-bookmarks.pli
 
 // Index in a scratch cache with the fake embedder: never the user's cache, never the real model.
 const CACHE = mkdtempSync(path.join(os.tmpdir(), "mnemos-cache-"));
-const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake" };
+// No page fetching: the fixtures' URLs are real sites.
+const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake", MNEMOS_FETCH_PAGES: "0" };
 // Each test closes its client, which waits for the server to exit, before this runs. A
 // throwing after hook would skip the hooks after it, so a leftover directory is let be.
 after(() => {

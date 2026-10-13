@@ -56,6 +56,8 @@ async function startServer(s) {
         MNEMOS_EMBEDDER: "fake",
         MNEMOS_FAKE_EMBED_GATE: s.gate,
         MNEMOS_FAKE_EMBED_LOG: s.log,
+        // No page fetching: the fixture's URLs are real sites.
+        MNEMOS_FETCH_PAGES: "0",
       },
       stderr: "ignore",
     }),

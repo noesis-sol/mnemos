@@ -131,8 +131,18 @@ do — no cryptic tracebacks.
 
 ### Page fetching
 
-Semantic search over page contents (in progress) fetches the pages you
-bookmarked, under a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
+For semantic search over page contents, mnemos fetches the pages you
+bookmarked in the background, after it has indexed their titles, and keeps
+their readable text (extracted with Mozilla's Readability) in its local index
+([`src/fetcher.ts`](src/fetcher.ts)). The first `semantic_search` answer after
+it starts says so once. Newest bookmarks go first, at most 4 fetches at a time,
+one at a time per site with a second between them. When several MCP clients
+each run mnemos, only one of them fetches. A page behind a login, or one that
+needs JavaScript to show anything, is noted as such and not retried; a page
+that fails is retried later, waiting an hour, then twice as long each time, up
+to a week. Set `MNEMOS_FETCH_PAGES=0` to turn all of it off.
+
+Every fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
 
 - **Web pages only.** `http:` and `https:` URLs; `http://` is tried as
   `https://` first and falls back to plain http only when the TLS handshake or
@@ -154,6 +164,7 @@ bookmarked, under a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
 
 | Environment variable | Purpose |
 |----------------------|---------|
+| `MNEMOS_FETCH_PAGES` | `0` turns off fetching bookmarked pages; search then uses titles only |
 | `MNEMOS_SKIP_DOMAINS` | Comma-separated domains never fetched; each also covers its subdomains |
 | `MNEMOS_SKIP_FOLDERS` | Comma-separated folder names (whole-word, like `list_folder_contents`) whose pages are never fetched; their titles are still searchable |
 | `MNEMOS_FETCH_ALLOW_HOSTS` | Comma-separated `host` or `host:port` exempt from the private-address block, e.g. an intranet wiki |
@@ -161,7 +172,7 @@ bookmarked, under a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
 ## Privacy & design
 
 - **Read-only.** mnemos never modifies your bookmarks file.
-- **Local-only.** No network calls, no telemetry — data goes from disk to your MCP client and nowhere else.
+- **Local-only.** No telemetry — data goes from disk to your MCP client and nowhere else. The only network calls fetch the pages you bookmarked (see [Page fetching](#page-fetching); `MNEMOS_FETCH_PAGES=0` stops them) and, once, the embedding model.
 - **Zero state.** The file is re-read per call (Firefox's whenever it has changed), so results always reflect what's in your browser right now.
 - **One file.** The whole server is [`src/index.ts`](src/index.ts) — auditable in five minutes.
 

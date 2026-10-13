@@ -16,7 +16,8 @@ const { version: VERSION } = JSON.parse(readFileSync(path.join(ROOT, "package.js
 
 // Index in a scratch cache with the fake embedder: never the user's cache, never the real model.
 const CACHE = mkdtempSync(path.join(os.tmpdir(), "mnemos-cache-"));
-const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake" };
+// No page fetching: the fixture's URLs are real sites.
+const INDEX_ENV = { MNEMOS_CACHE_DIR: CACHE, MNEMOS_EMBEDDER: "fake", MNEMOS_FETCH_PAGES: "0" };
 
 let client;
 

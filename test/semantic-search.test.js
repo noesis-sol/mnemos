@@ -80,6 +80,8 @@ async function startServer(s, env = {}) {
         MNEMOS_CACHE_DIR: s.cache,
         MNEMOS_EMBEDDER: "fake",
         MNEMOS_FAKE_EMBED_GATE: s.gate,
+        // No page fetching: the fixture's URLs are real sites (page-fetcher.test.js fetches).
+        MNEMOS_FETCH_PAGES: "0",
         ...env,
       },
       stderr: "ignore",
@@ -167,7 +169,8 @@ test("e2e: before the titles are indexed, keyword hits, and the status says so",
   assert.equal(data.status.search, "keyword");
   assert.equal(data.status.indexing, "indexing");
   assert.equal(data.status.embedder, "ready");
-  assert.equal(data.status.fetching_disabled, false);
+  assert.equal(data.status.fetching_disabled, true);
+  assert.equal(data.status.fetching, "disabled");
   assert.equal(data.status.progress, `titles 0/${servedCount} · pages 0/${servedPages}`);
   assert.match(data.status.note, /^Keyword matches only/);
   assert.match(data.status.note, /did not answer/);

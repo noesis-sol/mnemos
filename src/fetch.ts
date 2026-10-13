@@ -47,7 +47,9 @@ export type FailReason =
   | "too-large"
   | "too-many-redirects"
   | "bad-redirect"
-  | "http-error";
+  | "http-error"
+  /** The caller's signal aborted the fetch (mnemos is shutting down). */
+  | "aborted";
 
 export type FetchOutcome =
   | {
@@ -457,6 +459,8 @@ export interface FetchOptions {
    * available (pdf.pdfSupport), and PDFs are skipped as not-html unread.
    */
   acceptPdf?: boolean;
+  /** Aborts the fetch from outside (shutdown): it then ends as failed, reason "aborted". */
+  signal?: AbortSignal;
 }
 
 class StopError extends Error {
@@ -610,6 +614,10 @@ export async function safeFetch(input: string, options: FetchOptions = {}): Prom
   const maxBytes = options.maxBytes ?? MAX_RESPONSE_BYTES;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? FETCH_TIMEOUT_MS);
+  const outer = options.signal;
+  const abortFromOutside = () => controller.abort();
+  if (outer?.aborted) controller.abort();
+  else outer?.addEventListener("abort", abortFromOutside, { once: true });
   const opts = { ...options, config, resolve, signal: controller.signal };
   let current = input;
   try {
@@ -696,9 +704,11 @@ export async function safeFetch(input: string, options: FetchOptions = {}): Prom
     }
   } catch (e) {
     if (e instanceof StopError) return e.outcome;
+    if (outer?.aborted) return { status: "failed", reason: "aborted", url: current };
     if (isTimeout(e, controller.signal)) return { status: "failed", reason: "timeout", url: current };
     return { status: "failed", reason: "connection", url: current, detail: String(e) };
   } finally {
     clearTimeout(timer);
+    outer?.removeEventListener("abort", abortFromOutside);
   }
 }

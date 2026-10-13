@@ -101,6 +101,8 @@ test("unpacked package: starts through its bin and answers initialize and tools/
         // Its index in the scratch directory, not the user's cache, and the fake embedder, not the real model.
         MNEMOS_CACHE_DIR: path.join(scratch, "cache"),
         MNEMOS_EMBEDDER: "fake",
+        // No page fetching: the fixture's URLs are real sites.
+        MNEMOS_FETCH_PAGES: "0",
       },
     }),
   );

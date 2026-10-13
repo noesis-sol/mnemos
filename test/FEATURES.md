@@ -194,8 +194,8 @@ root entry and that matrix in step.
 
 ## Page fetch policy and safe fetch
 
-- **Reached by**: nothing in the server yet (the background page fetch, mnemos-tc4.9, will call
-  it); `src/fetch.ts`: `checkUrl`, `isBlockedAddress`, `isTokenLike`, `fetchConfig`
+- **Reached by**: the background page fetcher (`src/fetcher.ts`, see Background page fetching);
+  `src/fetch.ts`: `checkUrl`, `isBlockedAddress`, `isTokenLike`, `fetchConfig`
   (`MNEMOS_SKIP_DOMAINS`, `MNEMOS_SKIP_FOLDERS`, `MNEMOS_FETCH_ALLOW_HOSTS`), `acceptLanguage`,
   `safeFetch`.
 - **Tests**: `test/fetch-policy.test.js` (unit, table-driven, no network): non-web schemes;
@@ -326,6 +326,45 @@ root entry and that matrix in step.
   answered semantically; a model that cannot load gives keyword results with the reason; one
   still loading when the query gives up keeps loading and answers the next query.
   `e2e/semantic.e2e.js` (see Suites): the real model, golden queries and a restart.
+
+## Background page fetching
+
+- **Reached by**: every server start: `src/index.ts` calls `Fetcher.start()` once the first title
+  pass is done (`indexer.idle()`), and `Fetcher.stop()` on stdin's end, SIGTERM or SIGINT;
+  `src/fetcher.ts` (`Fetcher`, `extractPage`, `isLoginUrl`, `pageResult`, `backoffMs`,
+  `domainKey`). Only the process holding the store's `fetcher` lease (30 s, renewed every 10 s)
+  fetches. It adds a pending page per http(s) bookmark URL, applies `MNEMOS_SKIP_DOMAINS` and
+  `MNEMOS_SKIP_FOLDERS` to every page (dropping a newly skipped page's text and chunks), and
+  fetches pending and due pages with `safeFetch` (PDFs skipped as not-html for now), newest
+  bookmark first, 4 at a time, one per domain with 1 s between. Readability on a linkedom
+  document gives the text (whitespace collapsed, cut at 200,000 characters), stored in
+  `pages.text` (schema version 2) with `final_url`, `content_hash` and `fetched_at`; a password
+  field or a login path with under 1,000 characters is `needs_login`, under 200 characters
+  `no_content`; failures and refusals are `failed`, retried after 1 h doubling to 7 d (or
+  `Retry-After`). The first time fetching starts for an index, `semantic_search`'s next answer
+  carries a one-time `notice`; its `status.fetching` gives the fetcher's state.
+  `MNEMOS_FETCH_PAGES=0` turns it off; every other server-spawning test sets it, since the
+  fixtures' URLs are real sites.
+- **Tests**: `test/page-fetcher.test.js`: e2e (SDK client over stdio, fake embedder, temporary
+  cache, a `node:http` fixture site on `127.0.0.1` allowed through `MNEMOS_FETCH_ALLOW_HOSTS`):
+  three articles reach `ok` with their text, a password form and a redirect to `/signin`
+  `needs_login`, a JS shell `no_content`, a 404 `failed` with an hour's backoff; each page
+  requested once, never two at a time, at least ~1 s apart, newest first; the notice on exactly
+  one answer and not after a restart; `MNEMOS_FETCH_PAGES=0` requests nothing and reports
+  `disabled`; two servers on one cache request each page once (one `idle`, one reporting
+  another process); closing stdin, and SIGTERM (not on Windows), abort a hanging fetch, leave
+  its page pending and free the lease. In process: `extractPage` (scripts and styles dropped,
+  adjacent blocks kept apart, pages without `<html>`/`<body>`, login walls, short pages, a long
+  article with a sign-in box), `isLoginUrl`, `backoffMs`, `pageResult`, `domainKey`; a `Fetcher`
+  with a fake fetch: at most 4 at once and one per domain with the gap, domains in parallel,
+  newest first; only the lease holder fetches and the other takes over after `stop()`; disabled
+  opens nothing; the skip lists skip and un-skip pages; a fetch that throws is recorded on its
+  page; the store's version 1 to 2 migration, `addPendingPages`, `duePages`, `addMeta` and
+  `takeMeta`.
+- **Untested**: the lease lapsing while a holder still runs (another process taking it over
+  mid-fetch); real websites; extraction time on very large pages (it runs on the main thread).
+- **Tickets**: mnemos-tc4.9; mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
+  mnemos-tc4.5 (`no_content` pages through a headless browser)
 
 ## Tool errors over MCP
 

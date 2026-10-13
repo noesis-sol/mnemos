@@ -16,6 +16,7 @@
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
+import { fetchingDisabled, type Fetcher } from "./fetcher.js";
 import { bookmarkRows, type Indexer, type IndexScores } from "./indexer.js";
 import * as lib from "./lib.js";
 
@@ -32,15 +33,27 @@ export const QUERY_EMBED_TIMEOUT_MS = 3_000;
 export interface SemanticContext {
   embedder: Embedder;
   indexer: Indexer;
+  /** The page fetcher, whose state the status reports; absent, it is not reported. */
+  fetcher?: Fetcher;
   /** Defaults to process.env. */
   env?: NodeJS.ProcessEnv;
 }
 
 type MatchedOn = "title" | "page" | "keyword";
 
-/** Page fetching is on unless MNEMOS_FETCH_PAGES=0. */
-export function fetchingDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.MNEMOS_FETCH_PAGES?.trim() === "0";
+export { fetchingDisabled };
+
+/** The fetcher's state in a few words: "fetching", "another mnemos process is fetching"… */
+function fetcherState(fetcher: Fetcher): string {
+  const { state, error } = fetcher.status();
+  switch (state) {
+    case "standby":
+      return "another mnemos process is fetching";
+    case "failed":
+      return `failed: ${error}`;
+    default:
+      return state.replace("_", " ");
+  }
 }
 
 /** The embedder's state in a few words: "ready", "downloading 42%", "unavailable". */
@@ -211,8 +224,11 @@ export async function semanticSearch(
     indexing: titlesState.replace("_", " "),
     embedder: embedderState(embedder.status()),
     fetching_disabled: fetchingDisabled(ctx.env),
+    ...(ctx.fetcher ? { fetching: fetcherState(ctx.fetcher) } : {}),
     ...(note ? { note } : {}),
   };
+  // Once per index: tell the user their pages are being fetched, and how to stop it.
+  const notice = ctx.fetcher?.takeNote();
 
   if (hits.length === 0) {
     return {
@@ -225,7 +241,8 @@ export async function semanticSearch(
           ? ` in folders matching "${filter}". The folder name may be wrong — call list_folders ` +
             "to check, or retry without `folder`."
           : "."),
+      ...(notice ? { notice } : {}),
     };
   }
-  return { count_above_threshold: hits.length, results, status };
+  return { count_above_threshold: hits.length, results, status, ...(notice ? { notice } : {}) };
 }
