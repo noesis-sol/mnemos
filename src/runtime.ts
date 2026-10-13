@@ -16,6 +16,12 @@
  * first. Install scripts are skipped: onnxruntime-node ships its CPU binaries
  * in the package and its postinstall would only download the CUDA provider on
  * Linux x64, and sharp's binaries come as optional packages.
+ *
+ * Each runtime folder is named after its version, so a new TRANSFORMERS_VERSION
+ * installs beside the old one. Another mnemos on this machine (an older npx
+ * cache entry) may still use that one, so it is not removed on install: each
+ * load touches a marker in the folder it loads from, and removes the other
+ * versions' folders whose marker is UNUSED_RUNTIME_MS old.
  */
 
 import { spawn } from "node:child_process";
@@ -34,6 +40,11 @@ const STALE_INSTALL_MS = 2 * INSTALL_TIMEOUT_MS;
 const TEMP_PREFIX = ".install-";
 /** The module in a runtime folder that re-exports the library; written with it, so it marks a complete one. */
 const LOADER = "load.mjs";
+/** The file in a runtime folder whose mtime is when a mnemos last loaded it. */
+export const LAST_USED = "last-used";
+/** Another version's runtime not loaded for this long is removed. */
+export const UNUSED_RUNTIME_MS = 30 * 24 * 60 * 60_000;
+const FOLDER_PREFIX = "transformers-";
 
 /** npm could not install the runtime: a network or registry failure, worth trying again later. */
 export class RuntimeInstallError extends Error {
@@ -50,7 +61,7 @@ export function runtimeDir(dir: string = cacheDir()): string {
 
 /** The folder one dependency spec installs into: "transformers-4.3.1". */
 export function runtimeFolder(spec: string): string {
-  return `transformers-${spec.replace(/[^\w.-]+/g, "_").slice(-80)}`;
+  return `${FOLDER_PREFIX}${spec.replace(/[^\w.-]+/g, "_").slice(-80)}`;
 }
 
 /** How to run npm: the npm that runs mnemos (npx), the one beside node, or npm on the PATH. */
@@ -117,9 +128,10 @@ export interface LoadTransformersOptions {
 
 /**
  * The library: from beside mnemos, else from <cache dir>/runtime, installing
- * it there first unless `install` is false. Rejects with RuntimeInstallError
- * when npm fails, and with the import's error when the library is missing
- * and not to be installed.
+ * it there first unless `install` is false; a load from there marks its folder
+ * used and removes other versions' runtimes unused for UNUSED_RUNTIME_MS.
+ * Rejects with RuntimeInstallError when npm fails, and with the import's error
+ * when the library is missing and not to be installed.
  */
 export async function loadTransformers(options: LoadTransformersOptions = {}): Promise<unknown> {
   const importBeside = options.importBeside ?? (() => import(TRANSFORMERS));
@@ -140,6 +152,9 @@ export async function loadTransformers(options: LoadTransformersOptions = {}): P
       throw err instanceof RuntimeInstallError ? err : new RuntimeInstallError(`the runtime could not be installed: ${message(err)}`);
     }
   }
+  markUsed(folder);
+  removeStale(root);
+  await removeUnused(root, path.basename(folder));
   return import(pathToFileURL(path.join(folder, LOADER)).href);
 }
 
@@ -175,8 +190,8 @@ async function installRuntime(root: string, folder: string, options: LoadTransfo
 }
 
 /**
- * Removes installs a dead process left behind. Never throws. Other versions'
- * runtimes stay: another mnemos on this machine may pin one.
+ * Removes installs a dead process left behind, and the folders removeUnused
+ * renamed but did not finish removing. Never throws.
  */
 function removeStale(root: string): void {
   let entries: fs.Dirent[];
@@ -194,6 +209,62 @@ function removeStale(root: string): void {
       // already gone
     }
   }
+}
+
+/** Sets the folder's last use to now. Never throws: a read-only cache only loses the pruning. */
+function markUsed(folder: string): void {
+  const marker = path.join(folder, LAST_USED);
+  try {
+    const now = new Date();
+    fs.utimesSync(marker, now, now);
+  } catch {
+    try {
+      fs.writeFileSync(marker, "");
+    } catch {
+      // read-only
+    }
+  }
+}
+
+/**
+ * Removes the runtime folders other than `keep` last used UNUSED_RUNTIME_MS
+ * ago: by their marker, or for one installed before markers by its loader.
+ * Each is first renamed to a temporary folder, so a mnemos loading it finds it
+ * whole or absent; one interrupted removal is finished by removeStale. Never
+ * throws.
+ */
+async function removeUnused(root: string, keep: string): Promise<void> {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(FOLDER_PREFIX) || entry.name === keep) continue;
+    const full = path.join(root, entry.name);
+    try {
+      if (Date.now() - lastUsed(full) < UNUSED_RUNTIME_MS) continue;
+      const doomed = path.join(root, `${TEMP_PREFIX}${entry.name}-${process.pid}-${Date.now()}`);
+      fs.renameSync(full, doomed);
+      // The folder keeps its mtime, so removeStale finishes it should this stop.
+      await fs.promises.rm(doomed, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // in use (Windows), or another mnemos removed it first
+    }
+  }
+}
+
+/** When a runtime folder was last loaded: its marker's mtime, else its loader's, else its own. */
+function lastUsed(folder: string): number {
+  for (const file of [LAST_USED, LOADER]) {
+    try {
+      return fs.statSync(path.join(folder, file)).mtimeMs;
+    } catch {
+      // try the next
+    }
+  }
+  return fs.statSync(folder).mtimeMs;
 }
 
 /** Runs `npm install` in `cwd`, its output kept from stdout (the MCP channel). */

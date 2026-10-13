@@ -264,7 +264,9 @@ root entry and that matrix in step.
   `embed()`: from beside mnemos (the devDependency, in a checkout), else from
   `<cache dir>/runtime/transformers-<version>/`, which `src/runtime.ts` first installs with npm
   (scripts skipped) unless `MNEMOS_INSTALL_RUNTIME=0`; it is no dependency of the package, so a
-  cold `npx` stays within MCP clients' start timeouts. The model is downloaded on first use
+  cold `npx` stays within MCP clients' start timeouts. Each load from there touches the
+  folder's `last-used` marker and removes other versions' runtime folders unused for 30 days
+  (another mnemos on the machine may still load a recent one). The model is downloaded on first use
   into `<cache dir>/models`.
   `MNEMOS_EMBEDDER=fake` selects a deterministic word-hashing embedder, for tests only;
   with it, `MNEMOS_FAKE_EMBED_GATE` (embed waits until that file exists) and
@@ -297,10 +299,16 @@ root entry and that matrix in step.
   `RuntimeInstallError` leaving no temporary folder; two installs at once share one runtime
   folder; a dead process's temporary folder is removed, another version's runtime kept; the
   embedder reports `installing` then `ready`, and a failed install is retried after the
-  backoff; which npm runs, and without npx's `npm_*` variables. `e2e/semantic.e2e.js`: the
+  backoff; which npm runs, and without npx's `npm_*` variables.
+  `test/runtime-prune.test.js` (runtime folders laid out by hand, no npm): a load from the cache
+  touches its folder's marker; other versions' folders are removed once their marker (or, from
+  before markers, their loader) is 30 days old and kept before, folders not named
+  `transformers-*` and the one loaded are kept however old; a half-done removal is finished on
+  the next load; a library beside mnemos leaves the cache as it is. `e2e/semantic.e2e.js`: the
   packed tarball installs without the library, and the first start installs it from the
   registry.
-- **Untested**: the install's 15-minute timeout; npm on the PATH as the last resort (only the
+- **Untested**: the install's 15-minute timeout; a mnemos that runs over 30 days without
+  reloading its runtime, whose folder another version's mnemos may then remove under it; npm on the PATH as the last resort (only the
   choice of it is unit-tested); the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
 

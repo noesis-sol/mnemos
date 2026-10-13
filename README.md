@@ -113,7 +113,8 @@ after connecting, mnemos installs it with npm into its cache directory
 (`~/Library/Caches/mnemos/runtime` on macOS, `%LOCALAPPDATA%\mnemos\Cache\runtime`
 on Windows, `~/.cache/mnemos/runtime` on Linux) and then downloads the model
 (about 120 MB). Until both are there, `semantic_search` matches keywords and
-says why.
+says why. Each mnemos version that upgrades the runtime installs it beside the
+old one; a runtime no mnemos has loaded for 30 days is removed.
 
 > Chrome profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
 > `%LOCALAPPDATA%\Google\Chrome\User Data` (Windows), and
