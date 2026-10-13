@@ -167,6 +167,11 @@ export interface IndexerStatus {
   error?: string;
 }
 
+export interface IndexScores {
+  titles: Map<string, number>;
+  pages: Map<string, { score: number; text: string }>;
+}
+
 export interface IndexerOptions {
   embedder: Embedder;
   /** The Bookmarks file; defaults to lib.bookmarksPath(), read at each run. */
@@ -235,6 +240,25 @@ export class Indexer {
   /** The progress line's numbers. */
   progress(): { titles_done: number; titles_total: number } {
     return { titles_done: this.current.titles_done, titles_total: this.current.titles_total };
+  }
+
+  /**
+   * The query's similarity to every embedded title (by guid) and to each
+   * page's best chunk (by URL), from the open index; undefined while no run
+   * has opened it, or after one failed.
+   */
+  scores(query: Float32Array): IndexScores | undefined {
+    if (!this.store) return undefined;
+    return { titles: this.store.bookmarkScores(query), pages: this.store.bestChunks(query) };
+  }
+
+  /** Pages with embedded chunks; 0 while the index is not open or cannot be read. */
+  embeddedPages(): number {
+    try {
+      return this.store?.embeddedPageCount() ?? 0;
+    } catch {
+      return 0;
+    }
   }
 
   /** Starts the first run on a later turn of the event loop, so the caller (the handshake) goes first. */

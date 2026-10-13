@@ -503,6 +503,15 @@ export class IndexStore {
     return topK(scored(), limit);
   }
 
+  /** Every embedded bookmark's similarity to `query` (normalised), by guid. */
+  bookmarkScores(query: Float32Array): Map<string, number> {
+    const scores = new Map<string, number>();
+    for (const row of this.db.prepare("SELECT guid, vector FROM bookmarks WHERE vector IS NOT NULL").iterate()) {
+      scores.set(row.guid as string, dot(query, blobToVector(row.vector as Uint8Array)));
+    }
+    return scores;
+  }
+
   // --- pages and chunks ------------------------------------------------------
 
   upsertPage(page: PageRow): void {
@@ -570,6 +579,23 @@ export class IndexStore {
       }
     }
     return topK(scored(), limit);
+  }
+
+  /** Each page's chunk closest to `query` (normalised), by URL. */
+  bestChunks(query: Float32Array): Map<string, { score: number; text: string }> {
+    const best = new Map<string, { score: number; text: string }>();
+    for (const row of this.db.prepare("SELECT url, text, vector FROM chunks WHERE vector IS NOT NULL").iterate()) {
+      const url = row.url as string;
+      const score = dot(query, blobToVector(row.vector as Uint8Array));
+      if (score > (best.get(url)?.score ?? -Infinity)) best.set(url, { score, text: row.text as string });
+    }
+    return best;
+  }
+
+  /** How many pages have at least one embedded chunk. */
+  embeddedPageCount(): number {
+    const row = this.db.prepare("SELECT COUNT(DISTINCT url) AS n FROM chunks WHERE vector IS NOT NULL").get();
+    return Number(row?.n ?? 0);
   }
 
   // --- lease -----------------------------------------------------------------

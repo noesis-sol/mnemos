@@ -38,6 +38,27 @@ export const RETRY_MAX_MS = 60 * 60_000;
 
 export type EmbedKind = "query" | "passage";
 
+/**
+ * Which similarities semantic_search keeps: those at or above `floor`, at
+ * least `margin` above the median title's (what this query gives the library
+ * at large), and within `window` of the best. Each model spreads its scores
+ * differently.
+ */
+export interface Relevance {
+  floor: number;
+  margin: number;
+  window: number;
+}
+
+/**
+ * e5 squeezes cosine scores together: a query's median title scores about
+ * 0.75-0.80 (lower for Greek queries), its best unrelated one up to about
+ * 0.84, and related ones 0.84-0.89. Calibrated by hand on 2026-10-13 against
+ * a real library of 2,300 bookmarks: the queries are listed in
+ * test/semantic-search.test.js.
+ */
+export const MODEL_RELEVANCE: Relevance = { floor: 0.8, margin: 0.065, window: 0.04 };
+
 export type EmbedderStatus =
   | { state: "not_started" }
   /** Bytes so far and expected, summed over the model's files, when the library reports them. */
@@ -51,6 +72,7 @@ export interface Embedder {
   readonly id: string;
   readonly revision: string;
   readonly dim: number;
+  readonly relevance: Relevance;
   /** One normalised vector per text, in order. Rejects with EmbedderUnavailableError while unavailable. */
   embed(texts: string[], kind: EmbedKind): Promise<Float32Array[]>;
   status(): EmbedderStatus;
@@ -155,6 +177,7 @@ export class ModelEmbedder implements Embedder {
   readonly id = MODEL_ID;
   readonly revision = MODEL_REVISION;
   readonly dim = MODEL_DIM;
+  readonly relevance = MODEL_RELEVANCE;
   /** Where the model's files live once downloaded. */
   readonly modelDir: string;
 
@@ -288,29 +311,49 @@ export interface FakeEmbedderOptions {
   gate?: string;
   /** A file embed() appends each embedded text to, one JSON string a line (MNEMOS_FAKE_EMBED_LOG). */
   log?: string;
+  /** A reason to report as unavailable, and to reject embed() with (MNEMOS_FAKE_EMBED_UNAVAILABLE). */
+  unavailable?: string;
 }
+
+/** The fake's scores: 0 for no shared word, about 0.3 for one shared word in a short title. */
+export const FAKE_RELEVANCE: Relevance = { floor: 0.2, margin: 0, window: 1 };
+
+/**
+ * Words the fake counts as the same word, standing in for what the real model
+ * relates across wordings and languages. None is in the test fixture's own
+ * words except the ones they stand for.
+ */
+const FAKE_SYNONYMS = new Map([
+  ["aquarelle", "watercolor"],
+  ["poems", "ποιήματα"],
+  ["poetry", "ποιήματα"],
+]);
 
 /**
  * TEST ONLY (MNEMOS_EMBEDDER=fake): no model, no network. Each word of the
- * text (lower-cased letters and digits) is hashed into one of 384 slots, and
- * the counts are normalised, so texts that share words are similar and texts
- * that share none score 0 (barring hash collisions). Deterministic, and
- * `kind` is ignored. The gate and log let tests over MCP hold embedding back
- * and count what was embedded.
+ * text (lower-cased letters and digits; a synonym in FAKE_SYNONYMS as the word
+ * it stands for) is hashed into one of 384 slots, and the counts are
+ * normalised, so texts that share words are similar and texts that share none
+ * score 0 (barring hash collisions). Deterministic, and `kind` is ignored. The
+ * gate and log let tests over MCP hold embedding back and count what was
+ * embedded, and `unavailable` plays a model that could not be loaded.
  */
 export class FakeEmbedder implements Embedder {
   readonly id = "mnemos-fake-embedder";
   readonly revision = "1";
   readonly dim = MODEL_DIM;
+  readonly relevance = FAKE_RELEVANCE;
 
   constructor(private readonly options: FakeEmbedderOptions = {}) {}
 
   status(): EmbedderStatus {
-    return { state: "ready" };
+    const { unavailable } = this.options;
+    return unavailable ? { state: "unavailable", reason: unavailable } : { state: "ready" };
   }
 
   async embed(texts: string[], _kind: EmbedKind): Promise<Float32Array[]> {
-    const { gate, log } = this.options;
+    const { gate, log, unavailable } = this.options;
+    if (unavailable) throw new EmbedderUnavailableError(unavailable);
     while (gate && !fs.existsSync(gate)) {
       await new Promise((resolve) => setTimeout(resolve, 20).unref());
     }
@@ -331,15 +374,18 @@ function hashWord(word: string): number {
 
 export function fakeVector(text: string, dim: number = MODEL_DIM): Float32Array {
   const vector = new Float32Array(dim);
-  for (const word of text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []) vector[hashWord(word) % dim] += 1;
+  for (const word of text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []) {
+    vector[hashWord(FAKE_SYNONYMS.get(word) ?? word) % dim] += 1;
+  }
   return normalize(vector);
 }
 
 // --- choosing one ------------------------------------------------------------
 
 /**
- * The fake when MNEMOS_EMBEDDER=fake (tests only, with MNEMOS_FAKE_EMBED_GATE
- * and MNEMOS_FAKE_EMBED_LOG), else the real model, not yet loaded.
+ * The fake when MNEMOS_EMBEDDER=fake (tests only, with MNEMOS_FAKE_EMBED_GATE,
+ * MNEMOS_FAKE_EMBED_LOG and MNEMOS_FAKE_EMBED_UNAVAILABLE), else the real
+ * model, not yet loaded.
  */
 export function createEmbedder(
   env: NodeJS.ProcessEnv = process.env,
@@ -349,6 +395,7 @@ export function createEmbedder(
     return new FakeEmbedder({
       gate: env.MNEMOS_FAKE_EMBED_GATE || undefined,
       log: env.MNEMOS_FAKE_EMBED_LOG || undefined,
+      unavailable: env.MNEMOS_FAKE_EMBED_UNAVAILABLE || undefined,
     });
   }
   return new ModelEmbedder({ dir: cacheDir(env), ...options });

@@ -112,6 +112,7 @@ test("unpacked package: starts through its bin and answers initialize and tools/
       "list_folders",
       "recent_bookmarks",
       "search_bookmarks",
+      "semantic_search",
       "top_domains",
     ]);
   } finally {

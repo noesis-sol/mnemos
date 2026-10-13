@@ -26,6 +26,7 @@ import * as lib from "./lib.js";
 import { ICONS } from "./icon.js";
 import { createEmbedder } from "./embedder.js";
 import { Indexer } from "./indexer.js";
+import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -42,6 +43,22 @@ function safely(fn: () => unknown): ToolResult {
   }
 }
 
+/** safely() for a tool whose work is asynchronous. */
+async function safelyAsync(fn: () => Promise<unknown>): Promise<ToolResult> {
+  try {
+    const result = await fn();
+    return safely(() => result);
+  } catch (e) {
+    return safely(() => {
+      throw e;
+    });
+  }
+}
+
+const embedder = createEmbedder();
+/** Embeds bookmark titles in the background; semantic_search reads what it stores. */
+const indexer = new Indexer({ embedder });
+
 const server = new McpServer(
   { name: "mnemos", version: VERSION, icons: ICONS },
   {
@@ -50,9 +67,12 @@ const server = new McpServer(
       "the user deliberately saved: treat them as a map of what the user " +
       "considers important and which sources/opinions they endorse. Folder " +
       "names indicate topics of interest. Use search_bookmarks to check " +
-      "whether the user has saved material on a topic, list_folders to see " +
-      "their interest areas, top_domains to see which sources they trust, " +
-      "and recent_bookmarks to see what they are currently focused on.",
+      "whether the user has saved material containing exact words (a name, a " +
+      "product, a term), and semantic_search to find saved material by " +
+      "meaning: related wording, synonyms, or titles in other languages than " +
+      "the query's. Use list_folders to see their interest areas, top_domains " +
+      "to see which sources they trust, and recent_bookmarks to see what they " +
+      "are currently focused on.",
   },
 );
 
@@ -85,6 +105,41 @@ server.registerTool(
     },
   },
   async ({ query, folder, limit }) => safely(() => lib.searchBookmarks(query, folder, limit)),
+);
+
+server.registerTool(
+  "semantic_search",
+  {
+    title: "Semantic search over bookmarks",
+    description:
+      "Find the user's bookmarks by meaning, not exact words: a query finds " +
+      "bookmarks about the same thing in other wording or another language " +
+      "(the model is multilingual). Use this when search_bookmarks finds " +
+      "nothing or too little, or when the topic can be phrased many ways. " +
+      "Bookmarks containing every query word (search_bookmarks' rule) always " +
+      "rank first. Each result has `score` (similarity, higher is closer), " +
+      "`matched_on` (\"title\", \"page\" with a `snippet` of the page, or " +
+      "\"keyword\") and the usual bookmark fields. Only results above a " +
+      "relevance cutoff are returned; `count_above_threshold` counts them all, " +
+      "and if it exceeds `limit` the list is truncated. `status` reports " +
+      "indexing progress (\"titles x/N · pages y/N\"), the embedding model's " +
+      "state and whether page fetching is disabled; while the model is not " +
+      "ready, results are keyword matches only and `status.note` says why.",
+    inputSchema: {
+      query: z.string().describe("What to look for, in any words or language"),
+      folder: z
+        .string()
+        .optional()
+        .describe("Restrict to folders whose name matches (word-boundary)"),
+      limit: z
+        .number()
+        .int()
+        .optional()
+        .describe(`Max results (default ${DEFAULT_LIMIT}, cap ${MAX_LIMIT})`),
+    },
+  },
+  async ({ query, folder, limit }) =>
+    safelyAsync(() => semanticSearch({ embedder, indexer }, query, folder, limit)),
 );
 
 server.registerTool(
@@ -159,8 +214,6 @@ server.registerTool(
   async ({ limit }) => safely(() => lib.topDomains(limit)),
 );
 
-/** Embeds bookmark titles in the background; semantic search reads what it stores. */
-const indexer = new Indexer({ embedder: createEmbedder() });
 
 async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());

@@ -335,6 +335,25 @@ function wordStart(word: string): RegExp {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(word)}`, "u");
 }
 
+/** The query's words, lower-cased: what searchBookmarks and semantic search match. */
+export function queryWords(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * A test for search_bookmarks' rule: every word matches (as in queryMatches)
+ * the bookmark's title, URL, folder path or description. No words match nothing.
+ */
+export function keywordMatcher(words: string[]): (entry: Entry) => boolean {
+  const patterns = words.map(wordStart);
+  return (entry) => {
+    if (patterns.length === 0) return false;
+    const { name = "", url = "" } = entry.node;
+    const haystack = `${name} ${url} ${entry.folder} ${describe(entry.node) ?? ""}`.toLowerCase();
+    return patterns.every((p) => p.test(haystack));
+  };
+}
+
 // Titles and URLs are unbounded in the source file, and a single bookmark
 // carrying a giant title or a data: URI should not be able to blow up a tool
 // result. 2048 is past any real navigable URL, so live links are never
@@ -375,7 +394,7 @@ export function cap(limit: number | undefined, fallback: number, max = 200): num
 // ---------------------------------------------------------------------------
 
 export function searchBookmarks(query: string, folder?: string, limit?: number): unknown {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const words = queryWords(query);
   if (words.length === 0) {
     return {
       error:
@@ -386,13 +405,11 @@ export function searchBookmarks(query: string, folder?: string, limit?: number):
   // The filter is optional, so a blank one means "no filter" rather than an
   // error — unlike list_folder_contents, where the folder is the whole request.
   const filter = folder?.trim() ? folder : undefined;
-  const patterns = words.map(wordStart);
   const matches = [];
+  const matchesQuery = keywordMatcher(words);
   for (const entry of allBookmarks()) {
     if (filter && !folderMatches(entry.folder, filter)) continue;
-    const { name = "", url = "" } = entry.node;
-    const haystack = `${name} ${url} ${entry.folder} ${describe(entry.node) ?? ""}`.toLowerCase();
-    if (patterns.every((p) => p.test(haystack))) {
+    if (matchesQuery(entry)) {
       matches.push(fmt(entry));
     }
   }

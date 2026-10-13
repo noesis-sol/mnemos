@@ -45,11 +45,11 @@ after(() => {
   }
 });
 
-test("e2e: handshake exposes all five tools with schemas", async () => {
+test("e2e: handshake exposes all six tools with schemas", async () => {
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((t) => t.name).sort(),
-    ["list_folder_contents", "list_folders", "recent_bookmarks", "search_bookmarks", "top_domains"],
+    ["list_folder_contents", "list_folders", "recent_bookmarks", "search_bookmarks", "semantic_search", "top_domains"],
   );
   for (const tool of tools) {
     assert.ok(tool.description.length > 0, `${tool.name} has a description`);
