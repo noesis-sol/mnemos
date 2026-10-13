@@ -125,10 +125,12 @@ root entry and that matrix in step.
 - **Reached by**: tool `top_domains(limit?)`; `lib.topDomains`.
 - **Tests**: `test/tools.test.js` (unit): `chrome://` and `javascript:` excluded; `www.` stripped
   and counted with the bare host; IDN rendered as Unicode; `total_matches` with truncation.
-  `test/server.test.js` (e2e): `limit: 1`.
-- **Untested**: domains ordered by count, highest first; the default limit of 25 and the cap of
-  100; `file://` and unparseable URLs skipped; `http:` counted alongside `https:`; subdomains
-  kept apart (`docs.anthropic.com` is not `anthropic.com`).
+  `test/server.test.js` (e2e): `limit: 1`. `test/domains-edges.test.js` (unit): domains ordered
+  by count, highest first; the default limit of 25 and the cap of 100 with `total_matches`
+  counting every domain; a limit under the cap; `file://` and unparseable URLs skipped; `http:`
+  and `https:` on one host counted as one domain; subdomains kept apart (`docs.anthropic.com`
+  is not `anthropic.com`).
+- **Untested**: nothing known.
 - **Tickets**: mnemos-2gg.10
 
 ## Configuration and profile resolution
@@ -166,9 +168,14 @@ root entry and that matrix in step.
   goes; same URL in two folders as two rows; Float32 BLOB round trip bit for bit; nearest
   bookmarks and chunks by dot product; pages and chunks; a model or revision change dropping every
   vector and keeping the rows; the lease acquired, renewed, expired, taken over and released
-  between two stores on one file.
+  between two stores on one file. `test/index-open-race.test.js` (child processes on one cache
+  directory, released at one shared moment): several processes opening one new index at once
+  all open it, none fails with "database is locked", and the file ends in WAL mode.
 - **Untested**: corruption that appears while a store is open (callers see `isCorrupt` errors
-  and reopen); two processes, rather than two stores in one process, sharing the lease.
+  and reopen). Two processes sharing the lease are driven by `test/page-fetcher.test.js` (two
+  servers on one cache: only one fetches, each page once); a lease lapsing while its holder
+  still runs is not (see Background page fetching).
+- **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once)
 
 ## Other browsers and descriptions
 
@@ -603,8 +610,11 @@ root entry and that matrix in step.
   its file name implies (PNG pixel size read from the file); one light and one dark variant per
   format and size; the committed `src/icon.ts` equals what `scripts/build-icons.mjs` renders,
   written to a scratch path through the generator's optional output-path argument.
+  `test/line-endings.test.js` (unit, `git check-attr`): `.gitattributes` checks generated and
+  source text files out with LF on every platform (so the byte-for-byte comparison holds on
+  Windows) and keeps the PNG assets binary.
 - **Untested**: nothing known.
-- **Tickets**: mnemos-2gg.5
+- **Tickets**: mnemos-2gg.5; mnemos-i50 (LF checkouts)
 
 ## Published package
 

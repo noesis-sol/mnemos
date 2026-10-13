@@ -209,7 +209,9 @@ In it:
 
 All of it is a cache: everything in it can be rebuilt from your bookmarks and
 the web. To delete it, quit the MCP clients that run mnemos and remove the
-directory, e.g. `rm -rf ~/Library/Caches/mnemos`. The next start installs,
+directory, e.g. `rm -rf ~/Library/Caches/mnemos`. (npm also keeps the
+runtime's packages in your npm cache; `npm cache clean --force` frees that.)
+The next start installs,
 downloads and indexes again; set `MNEMOS_INSTALL_RUNTIME=0` and
 `MNEMOS_FETCH_PAGES=0` first if you do not want that.
 
@@ -279,21 +281,26 @@ Every fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
   writes to it.
 - **Bookmarks and embeddings stay local.** Your bookmarks, the index, the
   pages' text, the vectors and your queries stay on your machine: the model
-  runs locally, no embedding API is called, and there is no telemetry. Data
-  goes from disk to your MCP client and nowhere else.
+  runs locally, no embedding API is called, and there is no telemetry. What
+  mnemos reads from disk and builds goes to your MCP client and nowhere else.
 - **What goes over the network**, and nothing else:
   - each bookmarked page, requested from its own site as described in
     [Page fetching](#page-fetching) — the site sees a request for that URL
     from your IP address, as it would from your browser
     (`MNEMOS_FETCH_PAGES=0` stops this; `MNEMOS_SKIP_DOMAINS` and
-    `MNEMOS_SKIP_FOLDERS` narrow it);
+    `MNEMOS_SKIP_FOLDERS` narrow it). A page that needs JavaScript runs in the
+    headless browser like in yours: its scripts, stylesheets and the requests
+    they make go to whatever public hosts the page uses (CDNs, analytics),
+    which may learn the page's URL (`MNEMOS_BROWSER=0` stops this);
   - once, the embedding runtime from the npm registry
     (`MNEMOS_INSTALL_RUNTIME=0` stops this);
   - once, the model from Hugging Face;
   - and `npx` itself, fetching mnemos from the npm registry.
-- **Writes only to its cache.** The index, model and runtime live in the
-  [cache directory](#cache) (plus temporary copies of Firefox's database and
-  the headless browser's throwaway profile), which you can delete at any time.
+- **Writes to its cache.** The index, model and runtime live in the
+  [cache directory](#cache), which you can delete at any time. Besides it,
+  mnemos writes only temporary copies of Firefox's database and the headless
+  browser's throwaway profile, and npm keeps the runtime's packages in your
+  own npm cache (`~/.npm` by default; `npm cache clean --force` empties it).
 - **Fresh.** The keyword tools re-read the bookmarks file on every call
   (Firefox's whenever it has changed); `semantic_search` re-syncs the index
   when it finds the file has changed.
