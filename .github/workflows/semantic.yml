@@ -1,7 +1,10 @@
 name: Semantic search acceptance
 
 # Installs mnemos from its packed tarball like a user, with the real model,
-# and scores semantic_search against golden queries (e2e/semantic.e2e.js).
+# and scores semantic_search against golden queries over titles and fetched
+# pages, checks the fetch policy, the headless browser and freshness
+# (e2e/semantic.e2e.js). It renders JavaScript-only pages in the runner's
+# preinstalled Chrome; with none, the test fails, as GitHub sets $CI.
 # Every push to main and every pull request: ubuntu on Node 22 only, since the
 # repo is private and Actions minutes count (macOS x10, Windows x2). Weekly
 # and by hand: ubuntu, macOS and Windows on Node 22 and 24.

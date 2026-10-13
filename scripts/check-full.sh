@@ -22,7 +22,9 @@ node --test e2e/model.e2e.js
 
 # semantic search acceptance (e2e, opt-in): installs the packed tarball with npm into a clean
 # directory (real dependencies from the registry), downloads the real model unless
-# MNEMOS_E2E_MODEL_CACHE holds it, and scores the golden queries of e2e/fixtures/semantic.
+# MNEMOS_E2E_MODEL_CACHE holds it, scores the golden queries of e2e/fixtures/semantic over titles
+# and the fixture site's pages (rendered in an installed browser where they need one; with none,
+# those checks skip unless $CI is set), and checks the fetch policy and freshness (~2.5 min).
 # Opt-in like the model e2e, with MNEMOS_E2E_MODEL=1; CI runs it in .github/workflows/semantic.yml.
 printf '%s\n' 'SUITE: semantic search acceptance (e2e, opt-in with MNEMOS_E2E_MODEL=1)'
 if [ "${MNEMOS_E2E_MODEL:-}" = 1 ]; then

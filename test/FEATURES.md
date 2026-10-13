@@ -15,7 +15,7 @@ synthetic fixture `test/fixtures/bookmarks.json`, injected through `CHROME_BOOKM
 | unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (118 tests, ~1s) |
 | published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
 | embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages (2 tests, ~30s with the download) |
-| semantic search acceptance (e2e) | `scripts/check-full.sh` (only with `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (31 bookmarks pointing at a local fixture site) with the real model, waits for the titles, scores the golden queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache; prints a report and appends it to `$GITHUB_STEP_SUMMARY` (5 tests, ~15s with the model in `MNEMOS_E2E_MODEL_CACHE`, ~2 min with the download) |
+| semantic search acceptance (e2e) | `scripts/check-full.sh` (only with `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (43 bookmarks pointing at a local fixture site that serves what `pages.json` says) with the real model. Titles, with fetching off: waits for them, scores the title queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache. Pages, with fetching on and an installed browser (none fails it in CI, `$CI` set; elsewhere its checks are skipped): waits on `status.page_states` until every page is final and embedded, checks the state of each kind of page, proves from the site's request log that token-like, unsubscribe, `MNEMOS_SKIP_FOLDERS` and redirected-to-a-blocked-host URLs were never requested while their titles are found, scores the full query set (page queries `matched_on: "page"` with the topic in the snippet). Freshness: adds, then deletes and renames, bookmarks while the server runs. Prints a report and appends it to `$GITHUB_STEP_SUMMARY` (9 tests, ~2.5 min with the model in `MNEMOS_E2E_MODEL_CACHE`, most of it the pages fetched one per second) |
 
 `npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
 files: a new file named `test/<feature>.test.js` runs with no edit to `package.json`. On every
@@ -354,7 +354,8 @@ root entry and that matrix in step.
   field or a login path with under 1,000 characters is `needs_login`, under 200 characters
   `no_content`; failures and refusals are `failed`, retried after 1 h, 6 h, 1 d, 7 d, then
   30 d (or `Retry-After`); see Index freshness. The first time fetching starts for an index, `semantic_search`'s next answer
-  carries a one-time `notice`; its `status.fetching` gives the fetcher's state.
+  carries a one-time `notice`; its `status.fetching` gives the fetcher's state, and
+  `status.page_states` how many pages are in each state (`Indexer.pageCounts()`).
   `MNEMOS_FETCH_PAGES=0` turns it off; every other server-spawning test sets it, since the
   fixtures' URLs are real sites.
 - **Tests**: `test/page-fetcher.test.js`: e2e (SDK client over stdio, fake embedder, temporary
@@ -376,7 +377,11 @@ root entry and that matrix in step.
   page; the store's version 1 to 2 migration, `addPendingPages`, `duePages`, `addMeta` and
   `takeMeta`. `test/fetch-queue-order.test.js`: `duePages` lists pending pages first; a `Fetcher`
   fetches never-fetched bookmarks before the refreshes and retries due, and a bookmark added
-  while refreshes drain at the next heartbeat.
+  while refreshes drain at the next heartbeat. `test/semantic-page-states.test.js` (in process,
+  fake embedder): `status.page_states` is empty until the index is open and has pages, then
+  counts each state as the fetcher's store changes it. `e2e/semantic.e2e.js` (see Suites): the
+  installed package with the real model brings every kind of page to its final state, and never
+  requests the URLs the policy skips.
 - **Untested**: the lease lapsing while a holder still runs (another process taking it over
   mid-fetch); real websites; the worker dying mid-page.
 - **Tickets**: mnemos-tc4.9; mnemos-dbz (new bookmarks before refreshes); mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
@@ -405,6 +410,9 @@ root entry and that matrix in step.
   once on a policy change and once 30 days later; a deleted bookmark's page and chunks gone,
   a URL still bookmarked in another folder kept and never the deleted one fetched; skip-list
   edits skipping pages (chunks dropped, not fetched 31 days on) and un-skipping them.
+  `e2e/semantic.e2e.js` (see Suites), with the real model: a bookmark added to the file while
+  the server runs is found by its title, a deleted one (with page text) is gone from results,
+  and a renamed one is found by its new title, each waited for on the status.
 - **Untested**: two processes with different skip lists taking the lease in turn (each change
   of holder retries the `needs_login` and skipped pages once).
 - **Tickets**: mnemos-tc4.4; mnemos-tc4.13 (acceptance on GitHub)
@@ -434,7 +442,9 @@ root entry and that matrix in step.
   embedder with `MNEMOS_FAKE_EMBED_LOG`, a `node:http` fixture site): words only in a page's
   body find it with `matched_on: "page"` and a snippet holding them; after a restart that
   re-fetches both pages, the unchanged one is not embedded again and the changed one is.
-- **Untested**: the real model on page chunks (`e2e/semantic.e2e.js` scores titles only); two
+  `e2e/semantic.e2e.js` (see Suites): the real model on page chunks: English and Greek pages
+  found only through their body, across languages both ways, with the topic in the snippet.
+- **Untested**: two
   processes embedding the same chunks at once (harmless: the same vectors are written twice).
 - **Tickets**: mnemos-tc4.10; mnemos-tc4.4 (re-fetching after 30 days); mnemos-tc4.13
 
@@ -475,8 +485,11 @@ root entry and that matrix in step.
   none is found): a page that builds its text with JavaScript ends `ok` with it; its requests
   to a blocked host, direct and through a redirect, never arrive; images are not loaded; the
   temporary profile is gone after close.
-- **Untested**: Windows and Linux browsers for real (CI's runners may have none); a browser that
-  crashes mid-page; the 20 s limit with a real slow page.
+  `e2e/semantic.e2e.js` (see Suites): the installed package renders a JavaScript-only page in
+  the runner's Chrome and finds it by its text; with `MNEMOS_BROWSER=0` in CI it fails.
+- **Untested**: Windows and Linux browsers outside `.github/workflows/semantic.yml` (ubuntu on
+  every push and pull request, macOS and Windows weekly); a browser that crashes mid-page; the
+  20 s limit with a real slow page.
 - **Tickets**: mnemos-tc4.5; mnemos-g70 (needs_browser pages queued once after 30 days)
 
 ## Tool errors over MCP

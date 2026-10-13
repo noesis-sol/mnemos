@@ -59,10 +59,13 @@ const SKIP_FOLDER = "Banking";
 const IN_CI = Boolean(process.env.CI);
 
 // Thresholds. On 2026-10-13 (darwin/arm64, Node 24) every must query ranked
-// first and the MRR was 0.95: the top 3 and 0.8 leave room for the small
-// score differences ONNX gives on other CPUs, without letting a real
-// regression (no keyword boost, no folder paths in the text, no page chunks)
-// through.
+// first; the MRR was 0.95 on titles and 0.96 with pages, and every page query's
+// page cleared its cutoff by 0.03 or more. The top 3 and 0.8 leave room for
+// the small score differences ONNX gives on other CPUs and on other batches
+// (a chunk's score moves by up to about 0.015 with the chunks embedded beside
+// it, and those depend on when pages arrive), without letting a real
+// regression (no keyword boost, no folder paths in the text, no page chunks,
+// no headless browser) through: with page chunks ignored the MRR is 0.72.
 /** A `must` query fails unless one of its expected bookmarks ranks this high or higher. */
 const TOP_K = 3;
 /** The mean reciprocal rank over every ranked query must reach this. */
@@ -652,14 +655,14 @@ test("pages: every page is fetched, rendered where it needs a browser, and embed
   timings["pages: complete"] = seconds(Date.now() - started);
   const fetching = [...new Set(seen.map((s) => s.fetching))];
   timings["pages: fetcher states seen"] = fetching.join(" → ");
-  if (last.browser) {
-    // "N pages need a browser; set MNEMOS_BROWSER": none was found.
-    timings["pages: headless browser"] = `none: ${last.browser}`;
-    assert.ok(!IN_CI, `no headless browser in CI: ${last.browser}`);
-    browserMissing = true;
-  } else {
-    timings["pages: headless browser"] = "rendered the JavaScript-only pages";
-  }
+  // Final, whatever the states: the tests after this one run either way.
+  pagesDone = true;
+  // "N pages need a browser; set MNEMOS_BROWSER": none was found. Outside CI
+  // the checks that need one are skipped; in CI they run, and fail.
+  browserMissing = Boolean(last.browser) && !IN_CI;
+  timings["pages: headless browser"] = last.browser
+    ? `none: ${last.browser}${browserMissing ? " (its checks skipped outside CI)" : ""}`
+    : "rendered the JavaScript-only pages";
 
   const { roots } = JSON.parse(fs.readFileSync(bookmarksFile, "utf8"));
   const expected = expectedStates(urlNodes(roots).map(({ node }) => node.url));
@@ -668,7 +671,7 @@ test("pages: every page is fetched, rendered where it needs a browser, and embed
   for (const state of new Set([...Object.keys(expected), ...Object.keys(states)])) {
     pageStates[state] = [states[state] ?? 0, expected[state] ?? 0];
   }
-  pagesDone = true;
+  assert.ok(!(last.browser && IN_CI), `no headless browser in CI: ${last.browser}`);
   assert.deepEqual(states, expected);
 });
 
@@ -702,10 +705,11 @@ test("fetch policy: blocked and skipped URLs were never requested, and their tit
   assert.deepEqual(failures, []);
 });
 
-test("golden queries with pages: every must query in the top 3, page queries matched on the page, MRR over the full set", async () => {
+test("golden queries with pages: every must query in the top 3, page queries matched on the page, MRR over the full set", async (t) => {
   assert.ok(pagesDone, "every page is in a final state");
   // Without a browser (outside CI only), the JavaScript-only page has no text to find.
   const queries = QUERIES.filter((q) => !(q.browser && browserMissing));
+  if (queries.length < QUERIES.length) t.diagnostic(`skipped without a browser: ${QUERIES.filter((q) => !queries.includes(q)).map((q) => q.query).join(", ")}`);
   fullRows.push(...(await runQueries(client, queries)));
   assert.deepEqual(failuresOf(fullRows), []);
 });
