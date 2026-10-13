@@ -290,6 +290,7 @@ export class ModelEmbedder implements Embedder {
       this.current = { state: "unavailable", reason };
       throw new EmbedderUnavailableError(reason);
     }
+    this.current = { state: "loading" };
     try {
       const downloaded = this.downloaded();
       configureTransformers(transformers.env, this.models, !downloaded);

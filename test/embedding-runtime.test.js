@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { EmbedderUnavailableError, MODEL_DIM, ModelEmbedder, RETRY_MIN_MS } from "../dist/embedder.js";
+import { EmbedderUnavailableError, MODEL_DIM, MODEL_FILES, ModelEmbedder, RETRY_MIN_MS } from "../dist/embedder.js";
 import {
   RuntimeInstallError,
   TRANSFORMERS,
@@ -134,7 +134,7 @@ test("install: two installs at once both load, into one runtime folder", { timeo
   assert.deepEqual(fs.readdirSync(runtimeDir(dir)), [runtimeFolder(standIn)]);
 });
 
-test("install: removes a dead process's temporary folder and other versions' runtimes, not a recent install", { timeout: 120_000 }, async () => {
+test("install: removes a dead process's temporary folder, not a recent install or another version's runtime", { timeout: 120_000 }, async () => {
   const dir = freshDir();
   const runtime = runtimeDir(dir);
   for (const name of [".install-dead", ".install-running", "transformers-4.0.0"]) {
@@ -143,7 +143,7 @@ test("install: removes a dead process's temporary folder and other versions' run
   const old = new Date(Date.now() - 24 * 60 * 60_000);
   fs.utimesSync(path.join(runtime, ".install-dead"), old, old);
   await loadTransformers({ dir, spec: standIn, importBeside: missing });
-  assert.deepEqual(fs.readdirSync(runtime).sort(), [".install-running", runtimeFolder(standIn)].sort());
+  assert.deepEqual(fs.readdirSync(runtime).sort(), [".install-running", runtimeFolder(standIn), "transformers-4.0.0"].sort());
 });
 
 test("embedder: reports installing, then embeds through the installed runtime", { timeout: 120_000 }, async () => {
@@ -167,6 +167,28 @@ test("embedder: reports installing, then embeds through the installed runtime", 
   assert.deepEqual(embedder.status(), { state: "ready" });
   assert.equal(vector.length, MODEL_DIM);
   assert.equal(vector[0], 1);
+});
+
+test("embedder: with the model already downloaded, it reports loading, not installing, once the runtime is in", { timeout: 120_000 }, async () => {
+  const dir = freshDir();
+  const seen = [];
+  const embedder = new ModelEmbedder({
+    dir,
+    importTransformers: async (onInstall) => {
+      const lib = await loadTransformers({ dir, spec: standIn, importBeside: missing, onInstall });
+      const from_pretrained = (...args) => {
+        seen.push(embedder.status());
+        return lib.AutoTokenizer.from_pretrained(...args);
+      };
+      return { ...lib, AutoTokenizer: { from_pretrained } };
+    },
+  });
+  for (const file of MODEL_FILES) {
+    fs.mkdirSync(path.dirname(path.join(embedder.modelDir, file)), { recursive: true });
+    fs.writeFileSync(path.join(embedder.modelDir, file), "");
+  }
+  await embedder.embed(["hello"], "query");
+  assert.deepEqual(seen, [{ state: "loading" }]);
 });
 
 test("embedder: a failed install is retried after the backoff, not before", { timeout: 120_000 }, async () => {

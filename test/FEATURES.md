@@ -295,7 +295,7 @@ root entry and that matrix in step.
   imported from there, and a later load runs no npm; one beside mnemos is used and nothing is
   installed; with installing off the import's error is kept; an npm failure is a
   `RuntimeInstallError` leaving no temporary folder; two installs at once share one runtime
-  folder; a dead process's temporary folder and other versions' runtimes are removed; the
+  folder; a dead process's temporary folder is removed, another version's runtime kept; the
   embedder reports `installing` then `ready`, and a failed install is retried after the
   backoff; which npm runs, and without npx's `npm_*` variables. `e2e/semantic.e2e.js`: the
   packed tarball installs without the library, and the first start installs it from the

@@ -145,7 +145,7 @@ export async function loadTransformers(options: LoadTransformersOptions = {}): P
 
 async function installRuntime(root: string, folder: string, options: LoadTransformersOptions): Promise<void> {
   fs.mkdirSync(root, { recursive: true });
-  removeStale(root, folder);
+  removeStale(root);
   const temp = fs.mkdtempSync(path.join(root, TEMP_PREFIX));
   try {
     const manifest = {
@@ -174,8 +174,11 @@ async function installRuntime(root: string, folder: string, options: LoadTransfo
   }
 }
 
-/** Removes installs a dead process left behind and the runtimes of other versions. Never throws. */
-function removeStale(root: string, keep: string): void {
+/**
+ * Removes installs a dead process left behind. Never throws. Other versions'
+ * runtimes stay: another mnemos on this machine may pin one.
+ */
+function removeStale(root: string): void {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
@@ -183,15 +186,12 @@ function removeStale(root: string, keep: string): void {
     return;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory() || !entry.name.startsWith(TEMP_PREFIX)) continue;
     const full = path.join(root, entry.name);
     try {
-      const stale = entry.name.startsWith(TEMP_PREFIX)
-        ? Date.now() - fs.statSync(full).mtimeMs > STALE_INSTALL_MS
-        : entry.name.startsWith("transformers-") && full !== keep;
-      if (stale) fs.rmSync(full, { recursive: true, force: true });
+      if (Date.now() - fs.statSync(full).mtimeMs > STALE_INSTALL_MS) fs.rmSync(full, { recursive: true, force: true });
     } catch {
-      // in use (Windows keeps loaded native modules), or already gone
+      // already gone
     }
   }
 }
