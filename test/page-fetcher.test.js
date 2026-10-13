@@ -6,7 +6,7 @@
 // a second apart, newest bookmarks first; MNEMOS_FETCH_PAGES=0 fetches
 // nothing; the one-time note shows once; two servers on one cache fetch each
 // page once; closing stdin aborts a fetch and frees the lease. In process
-// (dist/fetcher.js): extraction, backoff, the lease, the skip lists, and
+// (dist/fetcher.js, dist/extract.js): extraction in a worker thread, backoff, the lease, the skip lists, and
 // per-domain scheduling with a fake fetch.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
@@ -29,10 +29,9 @@ import {
   LEASE_NAME,
   backoffMs,
   domainKey,
-  extractPage,
-  isLoginUrl,
   pageResult,
 } from "../dist/fetcher.js";
+import { Extractor, extractPage, isLoginUrl } from "../dist/extract.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -443,6 +442,52 @@ test("extractPage: login walls, JS shells and short pages", () => {
   // A long article with a sign-in box beside it is the article.
   const withForm = article("okapi").replace("<footer>", '<form><input type="password"></form><footer>');
   assert.equal(extractPage(withForm, "https://example.com/login").status, "ok");
+});
+
+test("Extractor: a 3 MB page is extracted in the worker while the event loop keeps turning", async () => {
+  const words = ["quokka", "axolotl", "pangolin", "okapi"];
+  const big = article("tapir").replace(
+    "</article>",
+    `${Array.from({ length: 50_000 }, (_, i) => `<p>Note ${i} on the ${words[i % 4]}, with a few more words to read.</p>`).join("")}</article>`,
+  );
+  assert.ok(big.length > 3_000_000);
+  const extractor = new Extractor();
+  try {
+    let maxLag = 0;
+    let last = Date.now();
+    const ticker = setInterval(() => {
+      maxLag = Math.max(maxLag, Date.now() - last - 10);
+      last = Date.now();
+    }, 10);
+    const started = Date.now();
+    const result = await extractor.extract(big, "https://example.com/tapir");
+    const took = Date.now() - started;
+    clearInterval(ticker);
+    assert.equal(result.status, "ok");
+    assert.match(result.text, /Note 0 on the quokka/);
+    assert.equal(result.text.length, 200_000, "cut at MAX_TEXT_CHARS");
+    // Run here, extraction would hold the loop for the whole `took`.
+    assert.ok(maxLag < 250, `the event loop stalled ${maxLag} ms (extraction took ${took} ms)`);
+    // The worker stays up for the next page.
+    assert.equal((await extractor.extract(PAGES["/app"].body, "https://example.com/app")).status, "no_content");
+  } finally {
+    extractor.close();
+  }
+});
+
+test("Extractor: a page over the time limit fails, close() fails what waits, and a new worker follows", async () => {
+  const extractor = new Extractor(1);
+  try {
+    await assert.rejects(extractor.extract(article("slow"), "https://example.com/"), /longer than 0.001 s/);
+    const waiting = new Extractor();
+    const pending = waiting.extract(article("tapir"), "https://example.com/");
+    waiting.close();
+    await assert.rejects(pending, /extraction stopped/);
+    assert.equal((await waiting.extract(article("tapir"), "https://example.com/")).status, "ok");
+    waiting.close();
+  } finally {
+    extractor.close();
+  }
 });
 
 test("isLoginUrl: sign-in paths, not words that contain them", () => {

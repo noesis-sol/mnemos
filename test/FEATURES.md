@@ -331,13 +331,13 @@ root entry and that matrix in step.
 
 - **Reached by**: every server start: `src/index.ts` calls `Fetcher.start()` once the first title
   pass is done (`indexer.idle()`), and `Fetcher.stop()` on stdin's end, SIGTERM or SIGINT;
-  `src/fetcher.ts` (`Fetcher`, `extractPage`, `isLoginUrl`, `pageResult`, `backoffMs`,
-  `domainKey`). Only the process holding the store's `fetcher` lease (30 s, renewed every 10 s)
+  `src/fetcher.ts` (`Fetcher`, `pageResult`, `backoffMs`, `domainKey`), `src/extract.ts`
+  (`extractPage`, `isLoginUrl`, `Extractor`) and `src/extract-worker.ts`. Only the process holding the store's `fetcher` lease (30 s, renewed every 10 s)
   fetches. It adds a pending page per http(s) bookmark URL, applies `MNEMOS_SKIP_DOMAINS` and
   `MNEMOS_SKIP_FOLDERS` to every page (dropping a newly skipped page's text and chunks), and
   fetches pending and due pages with `safeFetch` (PDFs skipped as not-html for now), newest
   bookmark first, 4 at a time, one per domain with 1 s between. Readability on a linkedom
-  document gives the text (whitespace collapsed, cut at 200,000 characters), stored in
+  document, in a worker thread (30 s limit per page), gives the text (whitespace collapsed, cut at 200,000 characters), stored in
   `pages.text` (schema version 2) with `final_url`, `content_hash` and `fetched_at`; a password
   field or a login path with under 1,000 characters is `needs_login`, under 200 characters
   `no_content`; failures and refusals are `failed`, retried after 1 h doubling to 7 d (or
@@ -355,14 +355,15 @@ root entry and that matrix in step.
   another process); closing stdin, and SIGTERM (not on Windows), abort a hanging fetch, leave
   its page pending and free the lease. In process: `extractPage` (scripts and styles dropped,
   adjacent blocks kept apart, pages without `<html>`/`<body>`, login walls, short pages, a long
-  article with a sign-in box), `isLoginUrl`, `backoffMs`, `pageResult`, `domainKey`; a `Fetcher`
+  article with a sign-in box), `Extractor` (a 3 MB page extracted while the event loop keeps
+  ticking, the time limit, `close()` and a fresh worker after it), `isLoginUrl`, `backoffMs`, `pageResult`, `domainKey`; a `Fetcher`
   with a fake fetch: at most 4 at once and one per domain with the gap, domains in parallel,
   newest first; only the lease holder fetches and the other takes over after `stop()`; disabled
   opens nothing; the skip lists skip and un-skip pages; a fetch that throws is recorded on its
   page; the store's version 1 to 2 migration, `addPendingPages`, `duePages`, `addMeta` and
   `takeMeta`.
 - **Untested**: the lease lapsing while a holder still runs (another process taking it over
-  mid-fetch); real websites; extraction time on very large pages (it runs on the main thread).
+  mid-fetch); real websites; the worker dying mid-page.
 - **Tickets**: mnemos-tc4.9; mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
   mnemos-tc4.5 (`no_content` pages through a headless browser)
 

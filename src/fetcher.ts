@@ -1,8 +1,9 @@
 /**
  * The background page fetcher: fetches each bookmarked page under the fetch
  * policy (fetch.ts), extracts its readable text with Readability on a linkedom
- * document, and stores the text and the outcome in the index store's `pages`
- * table, where the chunker and semantic_search read them.
+ * document (extract.ts, in a worker thread), and stores the text and the
+ * outcome in the index store's `pages` table, where the chunker and
+ * semantic_search read them.
  *
  * One process at a time: several mnemos servers (one per MCP client) can share
  * the index, and only the one holding the store's "fetcher" lease fetches. It
@@ -19,9 +20,8 @@
  */
 
 import crypto from "node:crypto";
-import { Readability } from "@mozilla/readability";
-import { parseHTML } from "linkedom";
 import { checkUrl, fetchConfig, isSkippedFolder, safeFetch, type FetchConfig, type FetchOptions, type FetchOutcome } from "./fetch.js";
+import { Extractor, type Extraction } from "./extract.js";
 import { IndexStore, type PageRow } from "./index-store.js";
 import * as lib from "./lib.js";
 
@@ -36,12 +36,6 @@ export const LEASE_TTL_MS = 30_000;
 export const HEARTBEAT_MS = 10_000;
 /** With nothing to fetch, how often to look for new bookmarks and retries that came due. */
 export const IDLE_POLL_MS = 60_000;
-/** Readable text shorter than this is no page content (a JS shell, an error page). */
-export const MIN_TEXT_CHARS = 200;
-/** A page with a password field or on a login path is a login wall if its text is shorter than this. */
-export const LOGIN_TEXT_CHARS = 1_000;
-/** Text kept per page: enough for the chunker's per-page cap several times over. */
-export const MAX_TEXT_CHARS = 200_000;
 /** The first retry of a failed page waits this long; each further failure doubles it, up to BACKOFF_MAX_MS. */
 export const BACKOFF_BASE_MS = 60 * 60_000;
 export const BACKOFF_MAX_MS = 7 * 24 * 60 * 60_000;
@@ -57,106 +51,9 @@ const NOTE_KEY = "fetch_note_pending";
 /** Skip reasons that come from MNEMOS_SKIP_DOMAINS / MNEMOS_SKIP_FOLDERS, re-checked at each refill. */
 const CONFIG_SKIPS = new Set(["skip-domain", "skip-folder"]);
 
-/**
- * Block-level tags: a space goes before each, so text in adjacent blocks
- * ("<p>one</p><p>two</p>") stays two words once whitespace is collapsed.
- */
-const BLOCK_TAG =
-  /<(\/?)(address|article|aside|blockquote|br|caption|dd|div|dl|dt|figcaption|figure|footer|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|td|th|tr|ul)\b/gi;
-
-/** Last path segments of sign-in pages. */
-const LOGIN_SEGMENTS = new Set([
-  "login",
-  "log-in",
-  "logon",
-  "signin",
-  "sign-in",
-  "sign_in",
-  "sso",
-  "auth",
-  "authenticate",
-  "authorize",
-  "oauth",
-  "session",
-  "sessions",
-]);
-
 /** Page fetching is on unless MNEMOS_FETCH_PAGES=0. */
 export function fetchingDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.MNEMOS_FETCH_PAGES?.trim() === "0";
-}
-
-// --- extraction --------------------------------------------------------------
-
-export type Extraction =
-  | { status: "ok"; text: string }
-  | { status: "needs_login" | "no_content"; reason: string }
-  /** The extractor threw: the page is retried with backoff, like a failed fetch. */
-  | { status: "failed"; reason: string };
-
-/** Whitespace collapsed to single spaces. */
-export function normalizeText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-/** True for a URL whose path is a sign-in page: /login, /accounts/sign-in, /oauth/authorize… */
-export function isLoginUrl(raw: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
-  }
-  return url.pathname
-    .toLowerCase()
-    .split("/")
-    .some((segment) => LOGIN_SEGMENTS.has(segment.replace(/\.(?:html?|php|aspx?|jsp)$/, "")));
-}
-
-/**
- * A linkedom document with an <html> and a <body>. HTML lets a page leave
- * both tags out, and linkedom, unlike a browser, does not add them; without
- * them it has no body and Readability refuses the document.
- */
-function asDocument(html: string) {
-  let source = html.replace(/^\s*<!doctype[^>]*>/i, "");
-  if (!/<html[\s>]/i.test(source)) source = `<html>${source}</html>`;
-  if (!/<body[\s>]/i.test(source)) {
-    const head = source.match(/^([\s\S]*?<\/head\s*>)([\s\S]*)$/i);
-    source = head
-      ? `${head[1]}<body>${head[2]}</body>`
-      : source.replace(/<html([^>]*)>/i, "<html$1><body>").replace(/<\/html\s*>/i, "</body></html>");
-  }
-  return parseHTML(source).document;
-}
-
-/**
- * The readable text of an HTML page, or why it has none: a login wall (a
- * password field, or a final URL on a login path, with little text) is
- * needs_login, and a page with under MIN_TEXT_CHARS of readable text
- * (a JS-only shell) is no_content.
- */
-export function extractPage(html: string, url: string): Extraction {
-  // Scripts and styles are never text; dropping them first makes the parse cheaper.
-  const stripped = html
-    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
-    .replace(/<style\b[\s\S]*?<\/style\s*>/gi, "")
-    .replace(BLOCK_TAG, " <$1$2");
-  const document = asDocument(stripped);
-  const password = [...document.querySelectorAll("input")].some(
-    (input) => (input.getAttribute("type") ?? "").trim().toLowerCase() === "password",
-  );
-  // Readability changes the document, so the password field is looked for first.
-  const article = new Readability(document as unknown as Document).parse();
-  const text = normalizeText(article?.textContent ?? "");
-  if (text.length < LOGIN_TEXT_CHARS) {
-    if (password) return { status: "needs_login", reason: "password field" };
-    if (isLoginUrl(url)) return { status: "needs_login", reason: "login URL" };
-  }
-  if (text.length < MIN_TEXT_CHARS) {
-    return { status: "no_content", reason: `${text.length} characters of readable text` };
-  }
-  return { status: "ok", text: Array.from(text).slice(0, MAX_TEXT_CHARS).join("") };
 }
 
 // --- scheduling --------------------------------------------------------------
@@ -313,6 +210,8 @@ export class Fetcher {
   private readonly busyDomains = new Set<string>();
   /** When the last request to each domain ended. */
   private readonly lastDone = new Map<string, number>();
+  /** Page text extraction, off the event loop. */
+  private readonly extractor = new Extractor();
   /** Settles when no fetch is in flight; for tests and shutdown. */
   private settled: Promise<void> = Promise.resolve();
 
@@ -378,6 +277,7 @@ export class Fetcher {
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.heartbeat = this.wakeTimer = undefined;
     for (const controller of this.active.values()) controller.abort();
+    this.extractor.close();
     this.queue = [];
     if (this.holding) {
       try {
@@ -609,7 +509,7 @@ export class Fetcher {
     let extraction: Extraction | undefined;
     if (outcome.status === "ok" && outcome.kind === "html") {
       try {
-        extraction = extractPage(outcome.html, outcome.url);
+        extraction = await this.extractor.extract(outcome.html, outcome.url);
       } catch (err) {
         extraction = { status: "failed", reason: `extraction failed: ${message(err)}` };
       }
