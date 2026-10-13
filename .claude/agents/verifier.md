@@ -10,7 +10,7 @@ and try to show that it is not done.
 ## The project
 
 - TypeScript 5.5
-- Node.js >=18 (ESM)
+- Node.js >=22.13 (ESM)
 - Model Context Protocol SDK 1.18
 - zod 3
 - node:test
