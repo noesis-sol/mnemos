@@ -18,7 +18,9 @@
  * hops Chromium follows itself, so each document request of the top frame,
  * every hop of its redirects included, is checked with the full checkUrl over
  * the DevTools protocol (guardNavigation): a page that redirects to a
- * token-like URL is skipped, as safeFetch skips it.
+ * token-like URL is skipped, as safeFetch skips it. So is a page whose script
+ * or meta refresh navigates to one later: what the top frame shows at the end
+ * (Chrome's error page, or the proxy's 403) is never taken for the page.
  */
 
 import fs from "node:fs";
@@ -272,12 +274,27 @@ interface PwRequest {
 }
 
 interface PwPage {
-  goto(url: string, options: Record<string, unknown>): Promise<{ status(): number } | null>;
+  goto(url: string, options: Record<string, unknown>): Promise<PwResponse | null>;
   waitForLoadState(state: string, options: Record<string, unknown>): Promise<void>;
   content(): Promise<string>;
   url(): string;
   on(event: "popup", handler: (popup: PwPage) => void): void;
+  on(event: "response", handler: (response: PwResponse) => void): void;
   close(): Promise<void>;
+}
+
+interface PwResponse {
+  status(): number;
+  request(): PwRequest;
+}
+
+/** Whether a request is the page itself: a navigation of the top frame. */
+function isPage(request: PwRequest): boolean {
+  try {
+    return request.isNavigationRequest() && request.frame().parentFrame() === null;
+  } catch {
+    return false; // a request with no frame (a worker's) is not the page itself
+  }
 }
 
 /**
@@ -316,6 +333,13 @@ export interface HeadlessBrowserOptions {
 }
 
 const PLAYWRIGHT = "playwright-core"; // a variable, so tsc does not need the optional package to build
+
+/** The outcome for a page whose HTTP status is not a success, or undefined. */
+function httpOutcome(code: number, url: string): FetchOutcome | undefined {
+  if (code === 403 || code === 429) return { status: "refused", httpStatus: code, url };
+  if (code < 200 || code >= 300) return { status: "failed", reason: "http-error", url, httpStatus: code };
+  return undefined;
+}
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message.split("\n")[0] : String(err);
@@ -424,13 +448,7 @@ export class HeadlessBrowser implements PageRenderer {
     if (!check.ok) {
       // Token-like URLs are kept from the bookmark itself; what a page loads in a
       // fresh profile with no session carries the page's own keys, not the user's.
-      let page = false;
-      try {
-        page = request.isNavigationRequest() && request.frame().parentFrame() === null;
-      } catch {
-        // a request with no frame (a worker's) is not the page itself
-      }
-      if (page || check.reason !== "token-like") return abort();
+      if (isPage(request) || check.reason !== "token-like") return abort();
     }
     return route.continue().catch(() => undefined);
   }
@@ -455,25 +473,36 @@ export class HeadlessBrowser implements PageRenderer {
       page = await running.context.newPage();
       // A window the page opens is closed: only the page itself is rendered.
       page.on("popup", (popup) => void popup.close().catch(() => undefined));
+      // The HTTP status of the document the top frame shows: the page's, or that of
+      // where its script or a meta refresh went (the proxy's 403 when it refused it).
+      let code = 200;
+      page.on("response", (response) => {
+        if (isPage(response.request())) code = response.status();
+      });
       await guardNavigation(running.context, page, () => this.config, (navigation) => (refused = navigation));
       if (signal?.aborted) return { status: "failed", reason: "aborted", url };
-      let response: { status(): number } | null;
       try {
-        response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: remaining() });
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: remaining() });
       } catch (err) {
         // A redirect the policy refused: skipped, as safeFetch skips it.
         if (refused) return { status: "skipped", reason: refused.reason, url: refused.url };
         throw err;
       }
       current = page.url();
-      const code = response?.status() ?? 200;
-      if (code === 403 || code === 429) return { status: "refused", httpStatus: code, url: current };
-      if (code < 200 || code >= 300) return { status: "failed", reason: "http-error", url: current, httpStatus: code };
+      const unwanted = httpOutcome(code, current);
+      if (unwanted) return unwanted;
       await page
         .waitForLoadState("networkidle", { timeout: Math.min(this.settleMs, remaining()) })
         .catch(() => undefined); // still loading after the settle delay: take the page as it is
       const html = await page.content();
       current = page.url();
+      // The page's own script or a meta refresh navigated the top frame on: to a
+      // URL the policy refused (what is left is Chrome's error page or the proxy's
+      // refusal, not the page), or to one that did not load.
+      if (refused) return { status: "skipped", reason: refused.reason, url: refused.url };
+      if (current.startsWith("chrome-error:")) return { status: "failed", reason: "connection", url, detail: "the page navigated to an error page" };
+      const navigated = httpOutcome(code, current);
+      if (navigated) return navigated;
       if (html.length > MAX_RENDERED_CHARS) return { status: "failed", reason: "too-large", url: current };
       return { status: "ok", kind: "html", url: current, httpStatus: code, contentType: "text/html", charset: "utf-8", html };
     } catch (err) {
