@@ -16,7 +16,7 @@
     "test": "npm run build && node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.13"
   },
   "repository": {
     "type": "git",
