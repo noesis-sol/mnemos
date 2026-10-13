@@ -27,6 +27,7 @@ import {
   FIRST_FETCH_NOTE,
   Fetcher,
   LEASE_NAME,
+  REFRESH_MS,
   backoffMs,
   domainKey,
   pageResult,
@@ -253,7 +254,7 @@ test("e2e: pages are fetched, extracted and classified, one at a time per domain
       assert.doesNotMatch(row.text, /window\.app|color: red/, "no script or style text");
       assert.match(row.content_hash, /^[0-9a-f]{64}$/);
       assert.ok(row.fetched_at >= startedAt);
-      assert.equal(row.next_attempt_at, null);
+      assert.equal(row.next_attempt_at, row.fetched_at + REFRESH_MS);
     }
 
     assert.equal(page("/account").status, "needs_login");
@@ -512,10 +513,10 @@ test("isLoginUrl: sign-in paths, not words that contain them", () => {
 
 // --- results and backoff -------------------------------------------------------
 
-test("backoffMs: doubles from an hour, up to a week", () => {
+test("backoffMs: from an hour, up to 30 days", () => {
   assert.equal(backoffMs(1), BACKOFF_BASE_MS);
-  assert.equal(backoffMs(2), 2 * BACKOFF_BASE_MS);
-  assert.equal(backoffMs(4), 8 * BACKOFF_BASE_MS);
+  assert.equal(backoffMs(2), 6 * BACKOFF_BASE_MS);
+  assert.equal(backoffMs(4), 7 * 24 * BACKOFF_BASE_MS);
   assert.equal(backoffMs(40), BACKOFF_MAX_MS);
 });
 
@@ -524,24 +525,25 @@ test("pageResult: failures back off from the previous count; refusals honour Ret
   const failed = pageResult(url, { status: "failed", reason: "http-error", httpStatus: 500, url }, undefined, 2, 1_000);
   assert.equal(failed.status, "failed");
   assert.equal(failed.fail_count, 3);
-  assert.equal(failed.next_attempt_at, 1_000 + 4 * BACKOFF_BASE_MS);
+  assert.equal(failed.next_attempt_at, 1_000 + 24 * BACKOFF_BASE_MS);
   assert.equal(failed.reason, "http-error: HTTP 500");
   const timeout = pageResult(url, { status: "failed", reason: "timeout", url }, undefined, 0, 0);
   assert.equal(timeout.reason, "timeout");
-  const week = 7 * 24 * 60 * 60_000 + 1;
-  const refused = pageResult(url, { status: "refused", httpStatus: 429, url, retryAfterMs: week }, undefined, 0, 0);
+  const month = 31 * 24 * 60 * 60_000;
+  const refused = pageResult(url, { status: "refused", httpStatus: 429, url, retryAfterMs: month }, undefined, 0, 0);
   assert.equal(refused.status, "failed");
   assert.equal(refused.reason, "refused: HTTP 429");
-  assert.equal(refused.next_attempt_at, week);
+  assert.equal(refused.next_attempt_at, month);
   const skipped = pageResult(url, { status: "skipped", reason: "not-html", url }, undefined, 3, 0);
   assert.equal(skipped.status, "skipped");
-  assert.equal(skipped.next_attempt_at, null);
+  assert.equal(skipped.next_attempt_at, REFRESH_MS);
   const html = { status: "ok", kind: "html", url: `${url}/final`, httpStatus: 200, contentType: "text/html", charset: "utf-8", html: "" };
   const ok = pageResult(url, html, { status: "ok", text: "hello" }, 3, 7);
   assert.equal(ok.status, "ok");
   assert.equal(ok.fail_count, 0);
   assert.equal(ok.final_url, `${url}/final`);
   assert.equal(ok.text, "hello");
+  assert.equal(ok.next_attempt_at, 7 + REFRESH_MS);
   assert.equal(pageResult(url, html, { status: "failed", reason: "extraction failed: x" }, 0, 0).status, "failed");
 });
 

@@ -586,12 +586,22 @@ export class IndexStore {
     return Number(result.changes);
   }
 
-  /** Every page with its status and reason (no text): what the fetcher re-checks against the policy. */
-  pageStates(): { url: string; status: PageStatus; reason: string | null }[] {
+  /** Every page with its status, reason and next attempt (no text): what the fetcher re-checks against the policy. */
+  pageStates(): { url: string; status: PageStatus; reason: string | null; next_attempt_at: number | null }[] {
     return this.db
-      .prepare("SELECT url, status, reason FROM pages ORDER BY url")
+      .prepare("SELECT url, status, reason, next_attempt_at FROM pages ORDER BY url")
       .all()
-      .map((r) => ({ url: r.url as string, status: r.status as PageStatus, reason: r.reason as string | null }));
+      .map((r) => ({
+        url: r.url as string,
+        status: r.status as PageStatus,
+        reason: r.reason as string | null,
+        next_attempt_at: r.next_attempt_at === null ? null : Number(r.next_attempt_at),
+      }));
+  }
+
+  /** Makes the page due at `at` (ms since the epoch), leaving the rest of its row as it is. */
+  setNextAttempt(url: string, at: number): void {
+    this.db.prepare("UPDATE pages SET next_attempt_at = ? WHERE url = ?").run(at, url);
   }
 
   /** The URLs of pages to fetch now: pending ones, and those whose next attempt is due at `now`. */

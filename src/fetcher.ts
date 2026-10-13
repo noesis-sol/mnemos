@@ -10,6 +10,14 @@
  * renews the lease on a heartbeat and gives it up on exit; the others serve
  * queries from the shared index and take the lease over if it lapses.
  *
+ * Fresh over time: an ok page is fetched again REFRESH_MS (30 days) after it
+ * was fetched, and the indexer embeds it again only if its text changed. A
+ * failed page is retried after 1 h, 6 h, 1 d, 7 d, then every 30 d
+ * (BACKOFF_STEPS_MS), its fail_count kept. needs_login, no_content and
+ * skipped pages wait 30 days too; needs_login and skipped ones go again at
+ * once when the fetch policy changes. Pages of deleted bookmarks are dropped
+ * by the indexer's sync (IndexStore.syncBookmarks).
+ *
  * Polite and in the background: newest bookmarks first, at most CONCURRENCY
  * fetches at once, one at a time per domain, and DOMAIN_GAP_MS between the end
  * of one request to a domain and the start of the next. It yields to the event
@@ -44,9 +52,18 @@ export const LEASE_TTL_MS = 30_000;
 export const HEARTBEAT_MS = 10_000;
 /** With nothing to fetch, how often to look for new bookmarks and retries that came due. */
 export const IDLE_POLL_MS = 60_000;
-/** The first retry of a failed page waits this long; each further failure doubles it, up to BACKOFF_MAX_MS. */
-export const BACKOFF_BASE_MS = 60 * 60_000;
-export const BACKOFF_MAX_MS = 7 * 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
+const DAY_MS = 24 * HOUR_MS;
+/** How long a failed page waits after its 1st, 2nd, 3rd, 4th failure; from the 5th on, the last. */
+export const BACKOFF_STEPS_MS = [HOUR_MS, 6 * HOUR_MS, DAY_MS, 7 * DAY_MS, 30 * DAY_MS];
+export const BACKOFF_BASE_MS = BACKOFF_STEPS_MS[0];
+export const BACKOFF_MAX_MS = BACKOFF_STEPS_MS[BACKOFF_STEPS_MS.length - 1];
+/**
+ * An ok page is fetched again this long after it was fetched, and so is one
+ * that came back needs_login, no_content or skipped by the fetch itself (a
+ * policy change makes needs_login and skipped pages due at once).
+ */
+export const REFRESH_MS = 30 * DAY_MS;
 
 /** Shown once per index, on the first semantic_search answer after fetching starts. */
 export const FIRST_FETCH_NOTE =
@@ -55,6 +72,8 @@ export const FIRST_FETCH_NOTE =
 /** meta keys: when fetching first started for this index, and the note not yet shown. */
 const STARTED_KEY = "fetch_started_at";
 const NOTE_KEY = "fetch_note_pending";
+/** meta key: the fetch policy the last refill applied, as JSON. */
+const POLICY_KEY = "fetch_policy";
 
 /** Skip reasons that come from MNEMOS_SKIP_DOMAINS / MNEMOS_SKIP_FOLDERS, re-checked at each refill. */
 const CONFIG_SKIPS = new Set(["skip-domain", "skip-folder"]);
@@ -68,7 +87,7 @@ export function fetchingDisabled(env: NodeJS.ProcessEnv = process.env): boolean 
 
 /** How long to wait before retrying a page that has now failed `failCount` times. */
 export function backoffMs(failCount: number): number {
-  return Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * 2 ** Math.max(0, failCount - 1));
+  return BACKOFF_STEPS_MS[Math.min(BACKOFF_STEPS_MS.length, Math.max(1, failCount)) - 1];
 }
 
 /** The politeness key of a URL: its host, lower-case, without www. */
@@ -121,15 +140,22 @@ export function pageResult(
           ...base,
           status: "ok",
           fail_count: 0,
-          next_attempt_at: null,
+          next_attempt_at: now + REFRESH_MS,
           content_hash: contentHash(extraction.text),
           reason: null,
           text: extraction.text,
         };
       }
-      return { ...base, status: extraction.status, fail_count: 0, next_attempt_at: null, reason: extraction.reason, text: null };
+      return {
+        ...base,
+        status: extraction.status,
+        fail_count: 0,
+        next_attempt_at: now + REFRESH_MS,
+        reason: extraction.reason,
+        text: null,
+      };
     case "skipped":
-      return { ...base, status: "skipped", fail_count: 0, next_attempt_at: null, reason: outcome.reason, text: null };
+      return { ...base, status: "skipped", fail_count: 0, next_attempt_at: now + REFRESH_MS, reason: outcome.reason, text: null };
     case "refused":
       return failed(`refused: HTTP ${outcome.httpStatus}`, outcome.retryAfterMs);
     case "failed": {
@@ -413,7 +439,9 @@ export class Fetcher {
 
   /**
    * Re-reads the bookmarks, adds pages for new URLs, applies the skip lists
-   * to every page, and queues the pages that are due, newest bookmark first.
+   * to every page, and queues the pages that are due (pending, failed ones
+ * whose backoff is over, and pages last fetched REFRESH_MS ago), newest
+ * bookmark first.
    */
   private refill(): void {
     const store = this.store;
@@ -431,7 +459,7 @@ export class Fetcher {
       }
     }
     store.addPendingPages();
-    this.applySkipLists(store, info, config);
+    this.applyPolicy(store, info, config);
     const due: QueueItem[] = [];
     for (const url of store.duePages(this.now())) {
       const bookmark = info.get(url);
@@ -451,14 +479,21 @@ export class Fetcher {
   }
 
   /**
-   * Marks pages the skip lists now cover as skipped, dropping their text and
-   * chunks, and puts back to pending those a skip list no longer covers.
+   * Applies the fetch policy to every page. Marks pages the skip lists now
+   * cover as skipped, dropping their text and chunks; these wait, never due,
+   * until a skip list no longer covers them, and then go back to pending.
+   * When the policy (MNEMOS_SKIP_*, MNEMOS_FETCH_ALLOW_HOSTS) is not the one
+   * the last refill applied, needs_login pages and those the fetch itself
+   * skipped (a redirect to a skipped domain, a private address) are due at once.
    */
-  private applySkipLists(
+  private applyPolicy(
     store: IndexStore,
     info: Map<string, { folders: string[] }>,
     config: FetchConfig,
   ): void {
+    const policy = JSON.stringify(config);
+    const policyChanged = store.getMeta(POLICY_KEY) !== policy;
+    const now = this.now();
     for (const page of store.pageStates()) {
       const bookmark = info.get(page.url);
       if (!bookmark) continue;
@@ -466,13 +501,18 @@ export class Fetcher {
       let skip: string | undefined;
       if (bookmark.folders.some((folder) => isSkippedFolder(folder, config))) skip = "skip-folder";
       else if (!check.ok && CONFIG_SKIPS.has(check.reason)) skip = check.reason;
-      if (skip && !(page.status === "skipped" && page.reason === skip)) {
+      // A skip list's skip has no next attempt; the fetch's own (with the same reason, after a redirect) has one.
+      const listSkipped = page.status === "skipped" && page.next_attempt_at === null;
+      if (skip && !(listSkipped && page.reason === skip)) {
         store.upsertPage({ url: page.url, status: "skipped", reason: skip, text: null });
         store.replaceChunks(page.url, []);
-      } else if (!skip && page.status === "skipped" && page.reason !== null && CONFIG_SKIPS.has(page.reason)) {
+      } else if (!skip && listSkipped && page.reason !== null && CONFIG_SKIPS.has(page.reason)) {
         store.upsertPage({ url: page.url, status: "pending", text: null });
+      } else if (!skip && policyChanged && (page.status === "skipped" || page.status === "needs_login")) {
+        store.setNextAttempt(page.url, now);
       }
     }
+    if (policyChanged) store.setMeta(POLICY_KEY, policy);
   }
 
   /** Starts fetches up to the concurrency limit, each on a domain that is free and has rested. */

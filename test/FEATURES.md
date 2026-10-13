@@ -340,8 +340,8 @@ root entry and that matrix in step.
   document, in a worker thread (30 s limit per page), gives the text (whitespace collapsed, cut at 200,000 characters), stored in
   `pages.text` (schema version 2) with `final_url`, `content_hash` and `fetched_at`; a password
   field or a login path with under 1,000 characters is `needs_login`, under 200 characters
-  `no_content`; failures and refusals are `failed`, retried after 1 h doubling to 7 d (or
-  `Retry-After`). The first time fetching starts for an index, `semantic_search`'s next answer
+  `no_content`; failures and refusals are `failed`, retried after 1 h, 6 h, 1 d, 7 d, then
+  30 d (or `Retry-After`); see Index freshness. The first time fetching starts for an index, `semantic_search`'s next answer
   carries a one-time `notice`; its `status.fetching` gives the fetcher's state.
   `MNEMOS_FETCH_PAGES=0` turns it off; every other server-spawning test sets it, since the
   fixtures' URLs are real sites.
@@ -367,6 +367,33 @@ root entry and that matrix in step.
   mid-fetch); real websites; the worker dying mid-page.
 - **Tickets**: mnemos-tc4.9; mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
   mnemos-tc4.5 (`no_content` pages through a headless browser)
+
+## Index freshness
+
+- **Reached by**: the background fetcher's refill (`src/fetcher.ts`: `pageResult`, `backoffMs`,
+  `Fetcher`'s `applyPolicy`) and the indexer's sync (`IndexStore.syncBookmarks`). Every stored
+  outcome sets `pages.next_attempt_at`: an `ok`, `needs_login`, `no_content` or fetch-skipped
+  page is due `REFRESH_MS` (30 days) after its fetch, a `failed` one after `BACKOFF_STEPS_MS`
+  (1 h, 6 h, 1 d, 7 d, then 30 d) by its `fail_count`, which carries over until a fetch
+  succeeds. A re-fetched page whose `content_hash` is unchanged is not cut or embedded again.
+  The fetch policy (`fetchConfig`, as JSON in the `fetch_policy` meta key) is compared at each
+  refill; when it changed, `needs_login` pages and pages the fetch itself skipped (a redirect
+  to a skipped domain, a private address) are due at once. Pages a skip list covers are
+  `skipped` with no next attempt and their chunks dropped, and go back to `pending` once no
+  skip list covers them (the list edited, or the bookmark moved out of a skipped folder). A
+  deleted bookmark's row goes at the indexer's next run, with its page and chunks unless
+  another bookmark has the URL. The fetcher, indexer and store take a `now` clock.
+- **Tests**: `test/index-freshness.test.js` (in process, an injected clock, a fake fetch and a
+  counting fake embedder on one index): an ok page not fetched at 29 days and fetched at 31,
+  its unchanged text not embedded again and a changed one embedded; a failing page retried
+  exactly at 1 h, 6 h, 1 d, 7 d, 30 d and 30 d and not a minute before, then recovering with
+  its count reset; `needs_login` and a redirect's skip not fetched again at 29 days, fetched
+  once on a policy change and once 30 days later; a deleted bookmark's page and chunks gone,
+  a URL still bookmarked in another folder kept and never the deleted one fetched; skip-list
+  edits skipping pages (chunks dropped, not fetched 31 days on) and un-skipping them.
+- **Untested**: two processes with different skip lists taking the lease in turn (each change
+  of holder retries the `needs_login` and skipped pages once).
+- **Tickets**: mnemos-tc4.4; mnemos-tc4.13 (acceptance on GitHub)
 
 ## Page chunks
 
