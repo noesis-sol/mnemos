@@ -167,6 +167,8 @@ export interface FetcherOptions {
   idlePollMs?: number;
   /** Clock in ms since the epoch, for tests. */
   now?: () => number;
+  /** Called after a page's outcome is stored (the indexer's pagesChanged), never throwing into the fetcher. */
+  onPage?: (url: string) => void;
 }
 
 interface QueueItem {
@@ -197,6 +199,7 @@ export class Fetcher {
   private readonly heartbeatMs: number;
   private readonly idlePollMs: number;
   private readonly now: () => number;
+  private readonly onPage: (url: string) => void;
 
   private current: FetcherStatus = { state: "not_started", fetched: 0 };
   private store: IndexStore | undefined;
@@ -228,6 +231,7 @@ export class Fetcher {
     this.heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
     this.idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
     this.now = options.now ?? Date.now;
+    this.onPage = options.onPage ?? (() => {});
     if (fetchingDisabled(this.env)) this.current = { state: "disabled", fetched: 0 };
   }
 
@@ -525,6 +529,12 @@ export class Fetcher {
       this.current = { ...this.current, fetched: this.current.fetched + 1 };
     } catch (err) {
       this.fail(err);
+      return;
+    }
+    try {
+      this.onPage(item.url);
+    } catch (err) {
+      console.error(`mnemos: after storing ${item.url}: ${message(err)}`);
     }
   }
 }

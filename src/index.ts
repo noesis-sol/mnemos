@@ -61,8 +61,11 @@ async function safelyAsync(fn: () => Promise<unknown>): Promise<ToolResult> {
 const embedder = createEmbedder();
 /** Embeds bookmark titles in the background; semantic_search reads what it stores. */
 const indexer = new Indexer({ embedder });
-/** Fetches bookmarked pages and stores their text, in the one process holding the fetcher lease. */
-const fetcher = new Fetcher();
+/**
+ * Fetches bookmarked pages and stores their text, in the one process holding
+ * the fetcher lease; the indexer then chunks and embeds what it stored.
+ */
+const fetcher = new Fetcher({ onPage: () => indexer.pagesChanged() });
 
 const server = new McpServer(
   { name: "mnemos", version: VERSION, icons: ICONS },

@@ -3,7 +3,7 @@
  * exact words, from the vectors the background indexer stores.
  *
  * A bookmark scores the higher of its title vector's similarity to the query
- * and its best page chunk's (page chunks come from the page fetcher; with none
+ * and its best page chunk's (the indexer cuts fetched pages into chunks; with none
  * the title decides). Bookmarks matching every query word as search_bookmarks
  * does are keyword hits: they are always returned and rank above every other
  * hit, so an exact match never sinks below a loosely related one. Other
@@ -96,13 +96,32 @@ async function embedQuery(embedder: Embedder, query: string, ms: number): Promis
   }
 }
 
-/** Whitespace collapsed, and cut at a word boundary near SNIPPET_CHARS. */
-export function snippet(text: string, max: number = SNIPPET_CHARS): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+/**
+ * Whitespace collapsed, and cut at a word boundary near `max` characters. If
+ * none of the query's `words` is in the first part of the text, it starts a
+ * little before the first one there is, from a word start, with "…" before.
+ */
+export function snippet(text: string, max: number = SNIPPET_CHARS, words: string[] = []): string {
+  let flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
+  let lead = "";
+  const lower = flat.toLowerCase();
+  const found = words
+    .map((word) => lower.indexOf(word.toLowerCase()))
+    .filter((at) => at >= 0)
+    .reduce((min, at) => Math.min(min, at), Infinity);
+  if (found !== Infinity && found > max * 0.6) {
+    let start = Math.max(0, found - Math.floor(max / 4));
+    const space = flat.indexOf(" ", start);
+    if (space >= 0 && space < found) start = space + 1;
+    flat = flat.slice(start);
+    lead = "…";
+    max -= 1;
+    if (flat.length <= max) return lead + flat;
+  }
   const cut = flat.slice(0, max);
   const space = cut.lastIndexOf(" ");
-  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+  return `${lead}${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 /**
@@ -204,7 +223,7 @@ export async function semanticSearch(
       ...lib.fmt(hit.entry),
       score: hit.score === null ? null : round(hit.score),
       matched_on,
-      ...(hit.page !== undefined ? { snippet: snippet(hit.page) } : {}),
+      ...(hit.page !== undefined ? { snippet: snippet(hit.page, SNIPPET_CHARS, words) } : {}),
     };
   });
 

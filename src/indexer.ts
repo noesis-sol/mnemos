@@ -8,9 +8,16 @@
  * the titles are embedded in batches with a yield to the event loop between
  * them. Only rows whose text (text_hash) or model changed are embedded again.
  *
+ * After the titles, each run cuts the text of fetched pages into chunks
+ * (chunk.ts) and embeds them the same way, in smaller batches since a chunk
+ * is longer than a title. A page is cut again only when its text
+ * (content_hash) changed, so a re-fetch of the same text embeds nothing.
+ *
  * It re-runs when the Bookmarks file changes. There is no fs.watch: callers
  * (semantic_search) call checkForChanges(), which compares the file's mtime
  * and size with those of the last run and schedules a debounced re-index.
+ * The page fetcher calls pagesChanged() when it stores a page, which
+ * schedules a run of the page pass alone.
  *
  * Every error is caught and kept in status(); nothing here throws into a tool.
  */
@@ -18,12 +25,15 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import { domainToUnicode } from "node:url";
+import { chunkEmbeddingText, chunkText } from "./chunk.js";
 import type { Embedder } from "./embedder.js";
 import { IndexStore, type BookmarkRow } from "./index-store.js";
 import * as lib from "./lib.js";
 
 /** Titles per embed() call: progress is updated and vectors stored after each. */
 export const TITLE_BATCH = 32;
+/** Page chunks per embed() call: a chunk is up to ~350 tokens, a title ~20, so fewer at once. */
+export const CHUNK_BATCH = 8;
 /** How long checkForChanges() waits before re-indexing, so a burst of calls runs it once. */
 export const REINDEX_DEBOUNCE_MS = 2_000;
 
@@ -221,8 +231,11 @@ export class Indexer {
   /** The file as the last complete run read it; undefined until one completes. */
   private indexedSignature: string | undefined;
   private running: Promise<void> | undefined;
-  private again = false;
+  /** What to run once the run in progress ends: nothing, the page pass, or everything. */
+  private again: "none" | "pages" | "full" = "none";
   private timer: NodeJS.Timeout | undefined;
+  /** Whether the scheduled run includes the titles, or is the page pass alone. */
+  private timerFull = false;
 
   constructor(options: IndexerOptions) {
     this.embedder = options.embedder;
@@ -263,7 +276,15 @@ export class Indexer {
 
   /** Starts the first run on a later turn of the event loop, so the caller (the handshake) goes first. */
   start(): void {
-    this.schedule(0);
+    this.schedule(0, true);
+  }
+
+  /**
+   * A page's text was stored: schedules a debounced run of the page pass, so
+   * a burst of fetched pages is chunked and embedded together.
+   */
+  pagesChanged(): void {
+    this.schedule(this.debounceMs, false);
   }
 
   /**
@@ -276,7 +297,7 @@ export class Indexer {
         this.current.state !== "failed" &&
         this.indexedSignature !== undefined &&
         fileSignature(this.bookmarksFile()) === this.indexedSignature;
-      if (!unchanged) this.schedule(this.debounceMs);
+      if (!unchanged) this.schedule(this.debounceMs, true);
     } catch (err) {
       this.fail(err);
     }
@@ -296,37 +317,41 @@ export class Indexer {
     this.closeStore();
   }
 
-  /** A run after `delayMs`, unless one is already scheduled. */
-  private schedule(delayMs: number): void {
+  /** A run after `delayMs`, unless one is already scheduled; `full` includes the titles. */
+  private schedule(delayMs: number, full: boolean): void {
+    this.timerFull ||= full;
     if (this.timer) return;
     this.timer = setTimeout(() => {
+      const scheduledFull = this.timerFull;
       this.timer = undefined;
-      this.run();
+      this.timerFull = false;
+      this.run(scheduledFull);
     }, delayMs);
     this.timer.unref();
   }
 
-  /** Runs now, or once more after the run in progress. */
-  private run(): void {
+  /** Runs now, or once more after the run in progress. The page pass alone needs an open store. */
+  private run(full: boolean): void {
     if (this.running) {
-      this.again = true;
+      if (full) this.again = "full";
+      else if (this.again === "none") this.again = "pages";
       return;
     }
-    this.running = this.index()
+    const work = full || !this.store ? this.index() : this.indexPagesOnly(this.store);
+    this.running = work
       .catch((err) => this.fail(err))
       .finally(() => {
         this.running = undefined;
-        if (this.again) {
-          this.again = false;
-          this.run();
-        }
+        const again = this.again;
+        this.again = "none";
+        if (again !== "none") this.run(again === "full");
       });
   }
 
   private fail(err: unknown): void {
     const error = message(err);
     // stderr, never stdout (the MCP channel); once per distinct error, not per retry.
-    if (this.current.error !== error) console.error(`mnemos: indexing bookmark titles failed: ${error}`);
+    if (this.current.error !== error) console.error(`mnemos: indexing bookmarks failed: ${error}`);
     this.current = { ...this.current, state: "failed", error };
   }
 
@@ -388,5 +413,46 @@ export class Indexer {
     }
     this.indexedSignature = signature;
     this.current = { state: "ready", titles_done: this.current.titles_done, titles_total: this.current.titles_total };
+    await this.indexPagesOnly(store);
+  }
+
+  private async indexPagesOnly(store: IndexStore): Promise<void> {
+    try {
+      await this.indexPages(store);
+    } catch (err) {
+      this.closeStore();
+      throw err;
+    }
+  }
+
+  /**
+   * Cuts the pages whose text changed into chunks, then embeds every chunk
+   * that has no vector, the bookmark's title before each, CHUNK_BATCH at a
+   * time with a yield between.
+   */
+  private async indexPages(store: IndexStore): Promise<void> {
+    for (const page of store.pagesToChunk()) {
+      if (this.store !== store) return;
+      const text = page.content_hash === null ? null : store.getPage(page.url)?.text;
+      store.replaceChunks(page.url, text ? chunkText(text) : [], page.content_hash);
+      await yieldToEventLoop();
+    }
+    for (;;) {
+      if (this.store !== store) return;
+      const batch = store.chunksWithoutVector(CHUNK_BATCH);
+      if (batch.length === 0) return;
+      const titles = new Map<string, string>();
+      for (const c of batch) if (!titles.has(c.url)) titles.set(c.url, store.pageTitle(c.url));
+      const vectors = await this.embedder.embed(
+        batch.map((c) => chunkEmbeddingText(titles.get(c.url)!, c.text)),
+        "passage",
+      );
+      if (this.store !== store) return;
+      let stored = 0;
+      batch.forEach((c, j) => (stored += Number(store.setChunkVector(c.url, c.ordinal, c.text, vectors[j]))));
+      // Every chunk of the batch was replaced meanwhile (another process cut the page again): try once more later.
+      if (stored === 0) return void this.pagesChanged();
+      await yieldToEventLoop();
+    }
   }
 }

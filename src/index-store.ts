@@ -24,7 +24,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** Bump when the schema changes, and add a step to MIGRATIONS if the old data is worth keeping. */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 /**
  * Steps from version n to n+1, keyed by n. A file whose version has no path
@@ -33,7 +33,15 @@ export const SCHEMA_VERSION = 2;
 const MIGRATIONS: Record<number, (db: DatabaseSync) => void> = {
   // 2: the fetcher stores each page's extracted text.
   1: (db) => db.exec("ALTER TABLE pages ADD COLUMN text TEXT"),
+  // 3: the indexer records which text (content_hash) a page's chunks were cut from.
+  2: (db) => addColumn(db, "pages", "chunked_hash", "TEXT"),
 };
+
+/** Adds the column unless the table has it already (a file rolled back by hand, as tests do). */
+function addColumn(db: DatabaseSync, table: string, column: string, type: string): void {
+  const columns = db.prepare(`PRAGMA table_info("${table}")`).all().map((r) => r.name as string);
+  if (!columns.includes(column)) db.exec(`ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}`);
+}
 
 export type PageStatus =
   | "pending"
@@ -210,7 +218,8 @@ CREATE TABLE pages (
   next_attempt_at INTEGER,
   content_hash TEXT,
   reason TEXT,
-  text TEXT
+  text TEXT,
+  chunked_hash TEXT
 );
 CREATE TABLE chunks (
   url TEXT NOT NULL,
@@ -606,13 +615,41 @@ export class IndexStore {
     return counts;
   }
 
-  /** Replaces the page's chunks; the new ones have no vectors yet. */
-  replaceChunks(url: string, texts: string[]): void {
+  /**
+   * Replaces the page's chunks; the new ones have no vectors yet. `contentHash`
+   * is the content_hash of the text they were cut from (none for no text).
+   */
+  replaceChunks(url: string, texts: string[], contentHash: string | null = null): void {
     this.transaction(() => {
       this.db.prepare("DELETE FROM chunks WHERE url = ?").run(url);
       const insert = this.db.prepare("INSERT INTO chunks (url, ordinal, text, vector) VALUES (?, ?, ?, NULL)");
       texts.forEach((text, ordinal) => insert.run(url, ordinal, text));
+      this.db.prepare("UPDATE pages SET chunked_hash = ? WHERE url = ?").run(contentHash, url);
     });
+  }
+
+  /**
+   * Pages whose chunks are not cut from their text as it is: ok pages whose
+   * content_hash is not the one their chunks came from, and pages that have
+   * lost their text (no longer ok, and not just failing for now) but still
+   * have chunks from it.
+   */
+  pagesToChunk(): { url: string; content_hash: string | null }[] {
+    return this.db
+      .prepare(
+        `SELECT url, CASE WHEN status = 'ok' THEN content_hash END AS content_hash FROM pages
+         WHERE (status = 'ok' AND content_hash IS NOT NULL AND content_hash IS NOT chunked_hash)
+            OR (status NOT IN ('ok', 'failed') AND chunked_hash IS NOT NULL)
+         ORDER BY url`,
+      )
+      .all()
+      .map((r) => ({ url: r.url as string, content_hash: r.content_hash as string | null }));
+  }
+
+  /** The title of a bookmark with this URL (the first by guid), or "" if none has it. */
+  pageTitle(url: string): string {
+    const row = this.db.prepare("SELECT title FROM bookmarks WHERE url = ? ORDER BY guid LIMIT 1").get(url);
+    return row ? (row.title as string) : "";
   }
 
   getChunks(url: string): StoredChunk[] {
@@ -657,9 +694,15 @@ export class IndexStore {
     return best;
   }
 
-  /** How many pages have at least one embedded chunk. */
+  /** How many pages have chunks, every one of them embedded. */
   embeddedPageCount(): number {
-    const row = this.db.prepare("SELECT COUNT(DISTINCT url) AS n FROM chunks WHERE vector IS NOT NULL").get();
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM (
+           SELECT url FROM chunks GROUP BY url HAVING COUNT(vector) = COUNT(*)
+         )`,
+      )
+      .get();
     return Number(row?.n ?? 0);
   }
 
