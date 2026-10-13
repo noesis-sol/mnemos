@@ -11,8 +11,8 @@
  *
  * Until the embedder is ready, or while the index cannot be read, the answer
  * is the keyword hits alone, and the status says why. Every answer carries
- * the status: indexing progress, the embedder's state and whether page
- * fetching is disabled.
+ * the status: indexing progress, the embedder's state, whether page
+ * fetching is disabled, and how many pages wait for a browser there is none of.
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
@@ -237,6 +237,7 @@ export async function semanticSearch(
       `Bookmark titles are still being embedded (${titles_done} of ${titles_total || entries.length}); ` +
       "the rest are found only by exact words for now.";
   }
+  const browser = ctx.fetcher?.browserNote();
   const status = {
     progress: `titles ${titles_done}/${titles_total || entries.length} · pages ${indexer.embeddedPages()}/${pagesTotal}`,
     search: scores ? "semantic" : "keyword",
@@ -244,6 +245,8 @@ export async function semanticSearch(
     embedder: embedderState(embedder.status()),
     fetching_disabled: fetchingDisabled(ctx.env),
     ...(ctx.fetcher ? { fetching: fetcherState(ctx.fetcher) } : {}),
+    // "N pages need a browser; set MNEMOS_BROWSER", while there is none to render them with.
+    ...(browser ? { browser } : {}),
     ...(note ? { note } : {}),
   };
   // Once per index: tell the user their pages are being fetched, and how to stop it.

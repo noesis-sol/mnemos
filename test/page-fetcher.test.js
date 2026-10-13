@@ -2,7 +2,7 @@
 // with the SDK's client, MNEMOS_EMBEDDER=fake in a temporary MNEMOS_CACHE_DIR),
 // against a fixture site on 127.0.0.1 allowed with MNEMOS_FETCH_ALLOW_HOSTS:
 // articles reach ok with their text, a login wall needs_login, a JS shell
-// no_content, a 404 failed with backoff; one request at a time to the domain,
+// needs_browser (rendering is off here), a 404 failed with backoff; one request at a time to the domain,
 // a second apart, newest bookmarks first; MNEMOS_FETCH_PAGES=0 fetches
 // nothing; the one-time note shows once; two servers on one cache fetch each
 // page once; closing stdin aborts a fetch and frees the lease. In process
@@ -184,6 +184,8 @@ async function startServer({ bookmarks, cache, site, env = {} }) {
         MNEMOS_EMBEDDER: "fake",
         MNEMOS_FETCH_ALLOW_HOSTS: site.host,
         MNEMOS_FETCH_PAGES: "",
+        // No headless browser here: headless-render.test.js renders pages with one.
+        MNEMOS_BROWSER: "0",
         ...env,
       },
       stderr: "ignore",
@@ -260,7 +262,9 @@ test("e2e: pages are fetched, extracted and classified, one at a time per domain
     assert.equal(page("/members").status, "needs_login");
     assert.equal(page("/members").reason, "login URL");
     assert.equal(page("/members").final_url, site.url("/signin?next=%2Fmembers"));
-    assert.equal(page("/app").status, "no_content");
+    // A JS shell waits for a browser, and with rendering off the status says so.
+    assert.equal(page("/app").status, "needs_browser");
+    assert.match(page("/app").reason, /^\d+ characters of readable text$/);
     assert.equal(page("/app").text, null);
 
     const missing = page("/missing");
@@ -289,6 +293,7 @@ test("e2e: pages are fetched, extracted and classified, one at a time per domain
       }
       assert.equal(data.status.fetching_disabled, false);
       assert.equal(data.status.fetching, "idle");
+      assert.equal(data.status.browser, "1 page needs a browser; MNEMOS_BROWSER=0 turns page rendering off");
     }
     assert.equal(notices, 1);
   } finally {

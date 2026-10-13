@@ -348,7 +348,8 @@ root entry and that matrix in step.
 - **Tests**: `test/page-fetcher.test.js`: e2e (SDK client over stdio, fake embedder, temporary
   cache, a `node:http` fixture site on `127.0.0.1` allowed through `MNEMOS_FETCH_ALLOW_HOSTS`):
   three articles reach `ok` with their text, a password form and a redirect to `/signin`
-  `needs_login`, a JS shell `no_content`, a 404 `failed` with an hour's backoff; each page
+  `needs_login`, a JS shell `needs_browser` (with `MNEMOS_BROWSER=0`, and `status.browser`
+  saying so), a 404 `failed` with an hour's backoff; each page
   requested once, never two at a time, at least ~1 s apart, newest first; the notice on exactly
   one answer and not after a restart; `MNEMOS_FETCH_PAGES=0` requests nothing and reports
   `disabled`; two servers on one cache request each page once (one `idle`, one reporting
@@ -395,6 +396,42 @@ root entry and that matrix in step.
 - **Untested**: the real model on page chunks (`e2e/semantic.e2e.js` scores titles only); two
   processes embedding the same chunks at once (harmless: the same vectors are written twice).
 - **Tickets**: mnemos-tc4.10; mnemos-tc4.4 (re-fetching after 30 days); mnemos-tc4.13
+
+## Headless browser rendering
+
+- **Reached by**: the background fetcher, for a page whose plain fetch has under 200 characters
+  of readable text: it is stored `needs_browser` (its fail count kept) and queued for the
+  browser; `src/headless.ts` (`resolveBrowser`, `HeadlessBrowser`) and `src/policy-proxy.ts`
+  (`PolicyProxy`). The browser is `MNEMOS_BROWSER` (a path; `0` turns rendering off), else
+  Playwright's channels chrome, chrome-beta, chrome-dev, chrome-canary and msedge, else Chromium
+  and Brave where they install; driven by playwright-core, an optionalDependency loaded with
+  `import()`. Launched on the first such page, at most 2 pages at once under the fetcher's
+  per-domain rules, closed once none is left and on stop; a fresh temporary profile, deleted on
+  close; images, media and fonts dropped; route interception applies `checkUrl` (all of it to
+  the page, the host rules to what it loads), and every connection, redirect hops included, goes
+  through a local proxy that checks the host and its DNS answers. 20 s per page, then the
+  network idle or 3 s; Readability on `page.content()`. The result is stored as a plain fetch's
+  would be, except that no text is `no_content` for good. With no browser, no playwright-core or
+  rendering off, pages stay `needs_browser` and `semantic_search`'s `status.browser` says
+  "N pages need a browser; set MNEMOS_BROWSER" (or what is missing).
+- **Tests**: `test/headless-resolve.test.js` (unit, injected file system and environment): each
+  step of the order wins over the later ones, the order itself, nothing found, `0`, a path that
+  is not there, macOS home Applications, Linux and Windows paths and prefixes.
+  `test/headless-fetcher.test.js` (in process, a fake renderer): JS shells rendered from their
+  final URL and stored `ok` with the rendered text, at most 2 in the browser, one launch and one
+  close; no launch without such pages; a failing render backs off, an empty one is
+  `no_content`; playwright-core absent (a `HeadlessBrowser` whose import rejects) and no browser
+  found leave pages `needs_browser` with the note, crash nothing, and a later run with a
+  browser renders them without fetching them again. `test/policy-proxy.test.js`: plain requests
+  and CONNECT tunnels reach an allowed host; local names, private literals, names resolving to
+  a private address and DNS failures are refused before connecting.
+  `test/headless-render.test.js` (e2e, a real installed browser; skipped with the reason when
+  none is found): a page that builds its text with JavaScript ends `ok` with it; its requests
+  to a blocked host, direct and through a redirect, never arrive; images are not loaded; the
+  temporary profile is gone after close.
+- **Untested**: Windows and Linux browsers for real (CI's runners may have none); a browser that
+  crashes mid-page; the 20 s limit with a real slow page.
+- **Tickets**: mnemos-tc4.5
 
 ## Tool errors over MCP
 

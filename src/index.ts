@@ -16,6 +16,10 @@
  *                            file (overrides the above)
  *   MNEMOS_FETCH_PAGES       0 turns off fetching bookmarked pages in the
  *                            background (fetcher.ts)
+ *   MNEMOS_BROWSER           Path to a Chromium-based browser's executable to
+ *                            render JavaScript-only pages with (headless.ts);
+ *                            0 turns rendering off. Default: an installed
+ *                            Chrome, Edge, Chromium or Brave
  *
  * All logic lives in lib.ts; this file is MCP wiring only.
  */
@@ -133,7 +137,9 @@ server.registerTool(
       "indexing progress (\"titles x/N · pages y/N\"), the embedding model's " +
       "state and whether page fetching is disabled; while the model is not " +
       "ready, results are keyword matches only and `status.note` says why. " +
-      "`status.fetching` says what the background page fetcher is doing. A " +
+      "`status.fetching` says what the background page fetcher is doing, and " +
+      "`status.browser`, when present, how many pages need a browser to be read " +
+      "and how to provide one. A " +
       "`notice`, when present, is a one-time message for the user: pass it on.",
     inputSchema: {
       query: z.string().describe("What to look for, in any words or language"),

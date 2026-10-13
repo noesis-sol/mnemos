@@ -16,12 +16,20 @@
  * loop between steps, and an error is recorded on its page (failed, retried
  * with backoff) rather than thrown; nothing here throws into a tool call.
  *
+ * A page that comes back with no readable text (a JavaScript shell) is marked
+ * needs_browser and loaded again in a headless browser (headless.ts), at most
+ * BROWSER_PAGES at a time, under the same per-domain rules. The browser is
+ * launched on the first such page and closed once none is left. With no
+ * browser or no playwright-core, those pages stay needs_browser and
+ * browserNote() says so.
+ *
  * MNEMOS_FETCH_PAGES=0 turns it off entirely.
  */
 
 import crypto from "node:crypto";
 import { checkUrl, fetchConfig, isSkippedFolder, safeFetch, type FetchConfig, type FetchOptions, type FetchOutcome } from "./fetch.js";
 import { Extractor, type Extraction } from "./extract.js";
+import { BROWSER_PAGES, HeadlessBrowser, type PageRenderer, type Unavailable } from "./headless.js";
 import { IndexStore, type PageRow } from "./index-store.js";
 import * as lib from "./lib.js";
 
@@ -161,6 +169,10 @@ export interface FetcherOptions {
   /** Passed to every fetch (a test's CA, timeouts). */
   fetchOptions?: Omit<FetchOptions, "signal" | "folder" | "config">;
   concurrency?: number;
+  /** Renders pages that need a browser; defaults to a HeadlessBrowser on `env`. */
+  renderer?: PageRenderer;
+  /** Pages in the browser at once; defaults to BROWSER_PAGES. */
+  browserPages?: number;
   domainGapMs?: number;
   leaseTtlMs?: number;
   heartbeatMs?: number;
@@ -176,6 +188,8 @@ interface QueueItem {
   domain: string;
   folders: string[];
   added: number;
+  /** Load it in the browser: its plain fetch had no readable text. */
+  browser?: boolean;
 }
 
 function message(err: unknown): string {
@@ -194,6 +208,8 @@ export class Fetcher {
   private readonly fetch: FetchFn;
   private readonly fetchOptions: FetcherOptions["fetchOptions"];
   private readonly concurrency: number;
+  private readonly renderer: PageRenderer;
+  private readonly browserPages: number;
   private readonly domainGapMs: number;
   private readonly leaseTtlMs: number;
   private readonly heartbeatMs: number;
@@ -211,6 +227,10 @@ export class Fetcher {
   private queue: QueueItem[] = [];
   private readonly active = new Map<string, AbortController>();
   private readonly busyDomains = new Set<string>();
+  /** Pages in the browser now. */
+  private browserActive = 0;
+  /** Why the browser cannot render pages in this process, once a launch found out. */
+  private browserUnavailable: Unavailable | undefined;
   /** When the last request to each domain ended. */
   private readonly lastDone = new Map<string, number>();
   /** Page text extraction, off the event loop. */
@@ -226,6 +246,8 @@ export class Fetcher {
     this.fetch = options.fetch ?? safeFetch;
     this.fetchOptions = options.fetchOptions;
     this.concurrency = options.concurrency ?? CONCURRENCY;
+    this.renderer = options.renderer ?? new HeadlessBrowser({ env: this.env });
+    this.browserPages = options.browserPages ?? BROWSER_PAGES;
     this.domainGapMs = options.domainGapMs ?? DOMAIN_GAP_MS;
     this.leaseTtlMs = options.leaseTtlMs ?? LEASE_TTL_MS;
     this.heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
@@ -242,6 +264,24 @@ export class Fetcher {
   /** Whether this process holds the fetcher lease. */
   isHolder(): boolean {
     return this.holding;
+  }
+
+  /**
+   * "N pages need a browser; set MNEMOS_BROWSER" (or why else there is none),
+   * once a launch found no usable browser and pages are waiting for one;
+   * else undefined.
+   */
+  browserNote(): string | undefined {
+    if (!this.browserUnavailable) return undefined;
+    let waiting = 0;
+    try {
+      waiting = this.store?.pageCounts().needs_browser ?? 0;
+    } catch {
+      return undefined;
+    }
+    if (waiting === 0) return undefined;
+    const pages = waiting === 1 ? "1 page needs" : `${waiting} pages need`;
+    return `${pages} a browser; ${this.browserUnavailable.hint}`;
   }
 
   /**
@@ -282,6 +322,7 @@ export class Fetcher {
     this.heartbeat = this.wakeTimer = undefined;
     for (const controller of this.active.values()) controller.abort();
     this.extractor.close();
+    void this.renderer.close();
     this.queue = [];
     if (this.holding) {
       try {
@@ -325,6 +366,7 @@ export class Fetcher {
     this.holding = false;
     for (const controller of this.active.values()) controller.abort();
     this.queue = [];
+    void this.renderer.close();
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.wakeTimer = undefined;
     this.current = { state: "standby", fetched: this.current.fetched };
@@ -396,6 +438,14 @@ export class Fetcher {
       if (!bookmark || this.active.has(url)) continue;
       due.push({ url, domain: domainKey(url), ...bookmark });
     }
+    // Pages left needing a browser by an earlier run (or one that had none).
+    if (!this.browserUnavailable) {
+      for (const page of store.pageStates()) {
+        const bookmark = info.get(page.url);
+        if (page.status !== "needs_browser" || !bookmark || this.active.has(page.url)) continue;
+        due.push({ url: page.url, domain: domainKey(page.url), ...bookmark, browser: true });
+      }
+    }
     due.sort((a, b) => b.added - a.added);
     this.queue = due;
   }
@@ -435,8 +485,9 @@ export class Fetcher {
       const now = this.now();
       let picked = -1;
       for (let i = 0; i < this.queue.length; i++) {
-        const { domain } = this.queue[i];
+        const { domain, browser } = this.queue[i];
         if (this.busyDomains.has(domain)) continue;
+        if (browser && this.browserActive >= this.browserPages) continue;
         const ready = (this.lastDone.get(domain) ?? -Infinity) + this.domainGapMs;
         if (ready > now) {
           waitMs = Math.min(waitMs, ready - now);
@@ -476,12 +527,18 @@ export class Fetcher {
     const controller = new AbortController();
     this.active.set(item.url, controller);
     this.busyDomains.add(item.domain);
+    if (item.browser) this.browserActive++;
     this.current = { state: "fetching", fetched: this.current.fetched };
-    const run = this.fetchOne(item, controller.signal).finally(() => {
+    const run = (item.browser ? this.renderOne(item, controller.signal) : this.fetchOne(item, controller.signal)).finally(() => {
       this.active.delete(item.url);
       this.busyDomains.delete(item.domain);
       this.lastDone.set(item.domain, this.now());
+      if (item.browser) this.browserActive--;
       if (this.stopped || !this.holding) return;
+      // The browser stays open only while pages wait for it.
+      if (item.browser && this.browserActive === 0 && !this.queue.some((queued) => queued.browser)) {
+        void this.renderer.close();
+      }
       // When the queue ran dry, look for more right away: new bookmarks, or retries now due.
       try {
         if (this.queue.length === 0 && this.active.size === 0) this.refill();
@@ -508,6 +565,37 @@ export class Fetcher {
     } catch (err) {
       outcome = { status: "failed", reason: "connection", url: item.url, detail: message(err) };
     }
+    await this.record(item, outcome, signal);
+  }
+
+  /**
+   * Loads a page that needs a browser in the browser, launching it if need
+   * be, and records what happened; never throws. With no usable browser the
+   * page stays needs_browser, and so do the others queued for the browser.
+   */
+  private async renderOne(item: QueueItem, signal: AbortSignal): Promise<void> {
+    let outcome: FetchOutcome;
+    try {
+      const launched = await this.renderer.launch();
+      if (!launched.ok) {
+        if (!this.browserUnavailable) console.error(`mnemos: no browser to render pages with: ${launched.reason}`);
+        this.browserUnavailable = launched;
+        this.queue = this.queue.filter((queued) => !queued.browser);
+        return;
+      }
+      if (signal.aborted || this.stopped || !this.holding) return;
+      // Where the plain fetch ended up, after its https upgrade and redirects.
+      const from = this.store?.getPage(item.url)?.final_url ?? item.url;
+      outcome = await this.renderer.render(from, { config: fetchConfig(this.env), signal });
+    } catch (err) {
+      outcome = { status: "failed", reason: "connection", url: item.url, detail: message(err) };
+    }
+    await this.record(item, outcome, signal);
+  }
+
+  /** Extracts a fetched or rendered page's text and stores the page's new state. */
+  private async record(item: QueueItem, fetched: FetchOutcome, signal: AbortSignal): Promise<void> {
+    let outcome = fetched;
     if (signal.aborted || this.stopped || !this.holding) return; // the page stays as it was
     await yieldToEventLoop();
     let extraction: Extraction | undefined;
@@ -525,7 +613,14 @@ export class Fetcher {
     try {
       const previous = this.store.getPage(item.url);
       if (!previous) return; // the bookmark went away meanwhile
-      this.store.upsertPage(pageResult(item.url, outcome, extraction, previous.fail_count, this.now()));
+      let row = pageResult(item.url, outcome, extraction, previous.fail_count, this.now());
+      if (row.status === "no_content" && !item.browser) {
+        // A JavaScript shell, perhaps: the browser has the last word. The fail
+        // count carries over, so a page the browser keeps failing backs off.
+        row = { ...row, status: "needs_browser", fail_count: previous.fail_count };
+        if (!this.browserUnavailable) this.queue.unshift({ ...item, browser: true });
+      }
+      this.store.upsertPage(row);
       this.current = { ...this.current, fetched: this.current.fetched + 1 };
     } catch (err) {
       this.fail(err);

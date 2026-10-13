@@ -381,7 +381,7 @@ export type Resolver = (hostname: string) => Promise<ResolvedAddress[]>;
 export const systemResolver: Resolver = (hostname) =>
   dns.promises.lookup(hostname, { all: true, verbatim: true });
 
-type Resolution =
+export type Resolution =
   | { ok: true; addresses: ResolvedAddress[] }
   | { ok: false; reason: "private-address" | "dns"; detail?: string };
 
@@ -392,7 +392,7 @@ type Resolution =
  * URL matched against the allow list: the bookmark's own URL for its https
  * upgrade, so allowing `intranet:80` also covers the attempt on port 443.
  */
-async function resolveChecked(
+export async function resolveChecked(
   url: URL,
   allowAs: URL,
   config: FetchConfig,
@@ -422,7 +422,7 @@ async function resolveChecked(
  * checked, so a second DNS answer cannot swap in a private one between the
  * check and the connect (DNS rebinding).
  */
-function pinnedLookup(addresses: ResolvedAddress[]): net.LookupFunction {
+export function pinnedLookup(addresses: ResolvedAddress[]): net.LookupFunction {
   return ((_hostname: string, options: dns.LookupOptions, callback: (...args: unknown[]) => void) => {
     const wanted = options.family === 4 || options.family === 6 ? options.family : 0;
     const usable = wanted ? addresses.filter((a) => a.family === wanted) : addresses;
