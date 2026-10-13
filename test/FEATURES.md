@@ -130,6 +130,25 @@ root entry and that matrix in step.
   profile.
 - **Untested**: nothing known.
 
+## Local index store
+
+- **Reached by**: nothing yet; `src/index-store.ts` (`IndexStore.open`, `cacheDir`,
+  `indexFile`) is the semantic-search index the background embedder and page fetcher will use
+  (epic mnemos-tc4). One `node:sqlite` file in WAL mode per Bookmarks file, in
+  `MNEMOS_CACHE_DIR` or the OS cache directory.
+- **Tests**: `test/index-store.test.js` (unit, every store in a temporary `MNEMOS_CACHE_DIR`):
+  `cacheDir` per platform with the environment injected (`MNEMOS_CACHE_DIR`, `XDG_CACHE_HOME`
+  absolute only, `LOCALAPPDATA`, empty variables unset); `indexFile` naming; create, reopen, and
+  rebuild of an older or newer `schema_version`; a garbage file and an overwritten header moved
+  aside and rebuilt; bookmark upsert (unchanged rows untouched, a new `text_hash` drops the
+  vector, descriptions kept), delete and sync, with a URL's page and chunks kept until its last
+  bookmark goes; same URL in two folders as two rows; Float32 BLOB round trip bit for bit;
+  nearest bookmarks and chunks by dot product; pages and chunks; a model or revision change
+  dropping every vector and keeping the rows; the lease acquired, renewed, expired, taken over
+  and released between two stores on one file.
+- **Untested**: a database corrupted past its header (found only when the bad page is read, not
+  at open); two processes, rather than two stores in one process, sharing the lease.
+
 ## Tool errors over MCP
 
 - **Reached by**: any tool call; `safely()` in `src/index.ts` turns a thrown error into an
