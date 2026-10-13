@@ -544,6 +544,9 @@ test("pageResult: failures back off from the previous count; refusals honour Ret
   assert.equal(ok.final_url, `${url}/final`);
   assert.equal(ok.text, "hello");
   assert.equal(ok.next_attempt_at, 7 + REFRESH_MS);
+  const login = pageResult(url, html, { status: "needs_login", reason: "password field" }, 0, 7);
+  assert.equal(login.next_attempt_at, 7 + REFRESH_MS);
+  assert.equal(pageResult(url, html, { status: "no_content", reason: "0 characters" }, 0, 7).next_attempt_at, null);
   assert.equal(pageResult(url, html, { status: "failed", reason: "extraction failed: x" }, 0, 0).status, "failed");
 });
 

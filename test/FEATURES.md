@@ -372,10 +372,10 @@ root entry and that matrix in step.
 
 - **Reached by**: the background fetcher's refill (`src/fetcher.ts`: `pageResult`, `backoffMs`,
   `Fetcher`'s `applyPolicy`) and the indexer's sync (`IndexStore.syncBookmarks`). Every stored
-  outcome sets `pages.next_attempt_at`: an `ok`, `needs_login`, `no_content` or fetch-skipped
-  page is due `REFRESH_MS` (30 days) after its fetch, a `failed` one after `BACKOFF_STEPS_MS`
-  (1 h, 6 h, 1 d, 7 d, then 30 d) by its `fail_count`, which carries over until a fetch
-  succeeds. A re-fetched page whose `content_hash` is unchanged is not cut or embedded again.
+  outcome sets `pages.next_attempt_at`: an `ok`, `needs_login` or fetch-skipped page is due
+  `REFRESH_MS` (30 days) after its fetch, a `failed` one after `BACKOFF_STEPS_MS` (1 h, 6 h,
+  1 d, 7 d, then 30 d) by its `fail_count`, which carries over until a fetch succeeds; a
+  `no_content` page (no text even in the browser) has none and is final. A re-fetched page whose `content_hash` is unchanged is not cut or embedded again.
   The fetch policy (`fetchConfig`, as JSON in the `fetch_policy` meta key) is compared at each
   refill; when it changed, `needs_login` pages and pages the fetch itself skipped (a redirect
   to a skipped domain, a private address) are due at once. Pages a skip list covers are

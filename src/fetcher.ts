@@ -13,9 +13,9 @@
  * Fresh over time: an ok page is fetched again REFRESH_MS (30 days) after it
  * was fetched, and the indexer embeds it again only if its text changed. A
  * failed page is retried after 1 h, 6 h, 1 d, 7 d, then every 30 d
- * (BACKOFF_STEPS_MS), its fail_count kept. needs_login, no_content and
- * skipped pages wait 30 days too; needs_login and skipped ones go again at
- * once when the fetch policy changes. Pages of deleted bookmarks are dropped
+ * (BACKOFF_STEPS_MS), its fail_count kept. needs_login and skipped pages
+ * wait 30 days too, or go again at once when the fetch policy changes; a
+ * no_content page (no text even in the browser) is not fetched again. Pages of deleted bookmarks are dropped
  * by the indexer's sync (IndexStore.syncBookmarks).
  *
  * Polite and in the background: newest bookmarks first, at most CONCURRENCY
@@ -60,8 +60,8 @@ export const BACKOFF_BASE_MS = BACKOFF_STEPS_MS[0];
 export const BACKOFF_MAX_MS = BACKOFF_STEPS_MS[BACKOFF_STEPS_MS.length - 1];
 /**
  * An ok page is fetched again this long after it was fetched, and so is one
- * that came back needs_login, no_content or skipped by the fetch itself (a
- * policy change makes needs_login and skipped pages due at once).
+ * that came back needs_login or skipped by the fetch itself (a policy change
+ * makes those due at once).
  */
 export const REFRESH_MS = 30 * DAY_MS;
 
@@ -150,7 +150,8 @@ export function pageResult(
         ...base,
         status: extraction.status,
         fail_count: 0,
-        next_attempt_at: now + REFRESH_MS,
+        // no_content is for good (and, from a plain fetch, goes to the browser instead).
+        next_attempt_at: extraction.status === "needs_login" ? now + REFRESH_MS : null,
         reason: extraction.reason,
         text: null,
       };
