@@ -130,7 +130,8 @@ test("e2e: a page built by JavaScript ends ok with its text; requests to a block
   store.close();
 
   const env = { MNEMOS_FETCH_ALLOW_HOSTS: site.host };
-  const renderer = new HeadlessBrowser({ env, tmpDir: profiles });
+  // the browser skipReason found: env lacks the prefixes Windows installs under (LOCALAPPDATA, PROGRAMFILES)
+  const renderer = new HeadlessBrowser({ env, resolve: () => resolveBrowser(), tmpDir: profiles });
   const fetcher = new Fetcher({ env, bookmarksFile: () => bookmarksFile, entries: () => list, dir, renderer, heartbeatMs: 60_000 });
   const read = () => {
     const index = IndexStore.open({ bookmarksFile, dir });

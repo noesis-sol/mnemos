@@ -40,7 +40,8 @@ const LOGOUT = "/account/logout?token=abc";
 async function fixtureSite() {
   const hits = [];
   const server = http.createServer((req, res) => {
-    hits.push(req.url);
+    // Chrome asks for /favicon.ico on its own, sometimes: not a request the page made
+    if (req.url !== "/favicon.ico") hits.push(req.url);
     const html = (body) => res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" }).end(body);
     switch (new URL(req.url, "http://x").pathname) {
       case "/bounce":
@@ -102,7 +103,8 @@ test("e2e: a page that redirects to a token-like URL is skipped, and the URL is 
   const profiles = fs.mkdtempSync(path.join(os.tmpdir(), "mnemos-headless-redirect-"));
   const env = { MNEMOS_FETCH_ALLOW_HOSTS: site.host };
   const config = fetchConfig(env);
-  const renderer = new HeadlessBrowser({ env, tmpDir: profiles });
+  // the browser skipReason found: env lacks the prefixes Windows installs under (LOCALAPPDATA, PROGRAMFILES)
+  const renderer = new HeadlessBrowser({ env, resolve: () => resolveBrowser(), tmpDir: profiles });
   try {
     const bounced = await renderer.render(site.url("/bounce"), { config });
     assert.deepEqual(bounced, { status: "skipped", reason: "token-like", url: site.url(LOGOUT) });
@@ -134,7 +136,8 @@ test("e2e: a page whose script or meta refresh navigates where the policy refuse
   const profiles = fs.mkdtempSync(path.join(os.tmpdir(), "mnemos-headless-redirect-"));
   const env = { MNEMOS_FETCH_ALLOW_HOSTS: site.host };
   const config = fetchConfig(env);
-  const renderer = new HeadlessBrowser({ env, tmpDir: profiles });
+  // the browser skipReason found: env lacks the prefixes Windows installs under (LOCALAPPDATA, PROGRAMFILES)
+  const renderer = new HeadlessBrowser({ env, resolve: () => resolveBrowser(), tmpDir: profiles });
   try {
     const scripted = await renderer.render(site.url("/scripted"), { config });
     assert.deepEqual(scripted, { status: "skipped", reason: "token-like", url: site.url(LOGOUT) });
