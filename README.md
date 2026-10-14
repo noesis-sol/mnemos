@@ -66,7 +66,9 @@ after it has answered the client's handshake, so it never holds your client up:
    [Page fetching](#page-fetching)).
 
 The index is one SQLite file per bookmarks file, in mnemos's
-[cache directory](#cache). Until the model is ready, `semantic_search` answers
+[cache directory](#cache). When mnemos reads several browsers, `semantic_search`
+scores the query against each one's index and ranks the results as one
+library. Until the model is ready, `semantic_search` answers
 with keyword matches and says why; its `status` reports how far indexing has
 got.
 
@@ -84,6 +86,13 @@ got.
 Bookmarks carry a `description` where the browser stores one: Vivaldi's bookmark
 descriptions, Firefox's (the one typed in older Firefox's bookmark dialog, else the
 page's own description Firefox saved), and the preview text of Safari's Reading List.
+
+Every result carries `sources`, the bookmarks it read — `[{ "browser": "edge",
+"profile": "Work (Profile 1)", "bookmarks": "<path to the file>" }]` — and, when
+mnemos reads several browsers and one of them cannot be read, `warnings` saying
+which and why; the others are still searched. With several browsers, folder
+paths start with the browser's name (`Firefox › Bookmarks Toolbar › …`), and
+the `folder` filters match it.
 
 Every tool that can truncate reports a `total_matches` count (`semantic_search`:
 `count_above_threshold`), so the assistant always knows when it is looking at a
@@ -113,6 +122,9 @@ claude mcp add --scope user mnemos -- npx -y mnemos-mcp
   }
 }
 ```
+
+mnemos reads the bookmarks of your system's default browser, in the profile
+you last used; see [Configuration](#configuration) to choose others.
 
 Then ask things like:
 
@@ -152,17 +164,40 @@ variable:
 
 | Flag | Environment variable | Default | Purpose |
 |------|----------------------|---------|---------|
-| `--browser <id>` | `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `librewolf`, `waterfox`, `zen`, `floorp`, `tor-browser` or `safari` |
-| `--profile <name>` | `MNEMOS_PROFILE` | the profile the browser opens | Profile name as the browser shows it (e.g. `Work`, any case) or its directory (e.g. `Profile 3`). `CHROME_PROFILE` is an older name for the variable |
+| `--browser <ids>` | `MNEMOS_BOOKMARKS_BROWSER` | `default` | Browsers to read: `default` (your system's default browser), `all` (every browser with bookmarks on this machine), or one or more of `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `librewolf`, `waterfox`, `zen`, `floorp`, `tor-browser` and `safari`, separated by commas |
+| `--profile <name>` | `MNEMOS_PROFILE` | the profile the browser opens | Profile name as the browser shows it (e.g. `Work`, any case) or its directory (e.g. `Profile 3`), for one browser only. `CHROME_PROFILE` is an older name for the variable |
 
-For example, `claude mcp add --scope user mnemos -- npx -y mnemos-mcp --browser firefox`,
+For example:
+
+```sh
+claude mcp add --scope user mnemos -- npx -y mnemos-mcp --browser firefox
+claude mcp add --scope user mnemos -- npx -y mnemos-mcp --browser chrome,safari
+```
+
 or in Claude Desktop's config, `"args": ["-y", "mnemos-mcp", "--browser", "edge", "--profile", "Profile 1"]`.
-An unknown flag or browser stops mnemos at startup, with a message in your MCP
-client's log.
+
+- **`default`** finds the default browser the way your OS records it (macOS's
+  LaunchServices, Windows' https association, Linux's `xdg-settings` or
+  `mimeapps.list`). If it cannot tell, mnemos reads the first browser with
+  bookmarks and each result's `warnings` says so; if the default browser is one
+  mnemos cannot read (Arc, say), the tools say which it is and how to choose
+  another, rather than reading a different browser's bookmarks.
+- **A list or `all`** reads each browser in its default profile (the one it
+  last used), so `--profile` cannot be combined with them. A browser in the
+  list that has no bookmarks here, or cannot be read, is a warning, not an
+  error. `all` puts the bookmarks of every browser — work and personal ones
+  alike — into one context; choose browsers with `--browser` to keep them apart.
+- **Upgrading from 0.3**: the default used to be Chrome. If you set
+  `CHROME_PROFILE` or `CHROME_BOOKMARKS_PATH` and no browser, mnemos still reads
+  Chrome; otherwise add `--browser chrome` to keep reading Chrome.
+
+An unknown flag or browser, or `--profile` with several browsers, stops mnemos
+at startup, with a message (listing the valid browser ids) in your MCP client's
+log.
 
 | Environment variable | Default | Purpose |
 |----------------------|---------|---------|
-| `MNEMOS_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the browser and profile. `CHROME_BOOKMARKS_PATH` is an older name for it |
+| `MNEMOS_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the browser and profile, and cannot be combined with several browsers. `CHROME_BOOKMARKS_PATH` is an older name for it |
 | `MNEMOS_CACHE_DIR` | your OS cache directory | Where mnemos keeps its index, model and embedding runtime (see [Cache](#cache)) |
 | `MNEMOS_INSTALL_RUNTIME` | — | `0` keeps mnemos from installing its embedding runtime on first start; `semantic_search` then matches keywords only |
 | `MNEMOS_FETCH_PAGES` | — | `0` turns off fetching bookmarked pages; `semantic_search` then uses titles only |
@@ -364,7 +399,8 @@ scripts/check-full.sh  # npm test, then the end-to-end suites in e2e/
 
 Tests run against synthetic bookmarks fixtures in [`test/fixtures/`](test/fixtures/)
 — they never read your real Chrome profile. (Fixtures are injected via the same
-`CHROME_BOOKMARKS_PATH` override users can set; new tests should do the same.)
+`CHROME_BOOKMARKS_PATH` override users can set, which also selects Chrome, so no
+test depends on the machine's default browser; new tests should do the same.)
 Tests that start the server also set `MNEMOS_CACHE_DIR` to a temporary
 directory, `MNEMOS_FETCH_PAGES=0` unless they serve their own pages, and
 `MNEMOS_EMBEDDER=fake`, a word-hashing stand-in for the model that is for tests

@@ -4,8 +4,14 @@
  * paths through the --browser / --profile startup flags and the
  * MNEMOS_BOOKMARKS_PATH / MNEMOS_PROFILE / MNEMOS_BOOKMARKS_BROWSER environment
  * variables (CHROME_BOOKMARKS_PATH and CHROME_PROFILE are older aliases), which
- * is also how tests inject fixtures. Where each browser keeps its bookmarks, and the readers for
- * Firefox's and Safari's formats, live in browsers.ts.
+ * is also how tests inject fixtures. Which files those select is sources.ts's;
+ * where each browser keeps its bookmarks, and the readers for Firefox's and
+ * Safari's formats, live in browsers.ts.
+ *
+ * Every tool result carries `sources`, the bookmarks files it read, and
+ * `warnings` when some selected source could not be read. With several
+ * browsers selected, each bookmark's folder path starts with its browser's
+ * name ("Firefox › Bookmarks Toolbar › …").
  */
 
 import fs from "node:fs";
@@ -15,26 +21,21 @@ import {
   BROWSER_NAMES,
   PATH_ENV,
   PROFILE_ENV,
-  bookmarksPathOverride,
   browsersWithBookmarks,
   chromiumBase,
-  chromiumBookmarksPath,
   chromiumProfileLabels,
   firefoxBase,
-  firefoxPlacesPath,
   firefoxProfilesWithBookmarks,
   isChromium,
   isFirefox,
   isSqlite,
   readFirefoxRoots,
   readSafariRoots,
-  safariBookmarksPath,
-  selectedBrowser,
-  selectedProfile,
   type Browser,
   type StartupOptions,
 } from "./browsers.js";
 import { isBinaryPlist } from "./plist.js";
+import { selectSources, sourceName, type SelectOptions, type Source } from "./sources.js";
 
 export interface BookmarkNode {
   type?: string;
@@ -66,24 +67,23 @@ export function chromeBase(
 }
 
 /**
- * The bookmarks file to read: MNEMOS_BOOKMARKS_PATH (or CHROME_BOOKMARKS_PATH)
- * if set, else the file of the browser --browser or MNEMOS_BOOKMARKS_BROWSER
- * names (Chrome by default), in the profile --profile, MNEMOS_PROFILE or
+ * The bookmarks file to read when one source is selected:
+ * MNEMOS_BOOKMARKS_PATH (or CHROME_BOOKMARKS_PATH) if set, else the file of
+ * the browser --browser or MNEMOS_BOOKMARKS_BROWSER names (the system default
+ * browser when neither is set; Chrome when CHROME_PROFILE or
+ * CHROME_BOOKMARKS_PATH is), in the profile --profile, MNEMOS_PROFILE or
  * CHROME_PROFILE names (the browser's default when none is set). `options`
- * defaults to the startup flags.
+ * defaults to the startup flags. Several browsers selected is an error: see
+ * selectSources() in sources.ts.
  */
 export function bookmarksPath(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   options?: StartupOptions,
 ): string {
-  const override = bookmarksPathOverride(env);
-  if (override) return override;
-  const browser = selectedBrowser(env, options);
-  const profile = selectedProfile(env, options);
-  if (isFirefox(browser)) return firefoxPlacesPath(browser, profile, platform, env);
-  if (browser === "safari") return safariBookmarksPath();
-  return chromiumBookmarksPath(browser, profile, platform, env);
+  const { sources, multi } = selectSources({ env, platform, options });
+  if (multi) throw new Error("Several browsers are selected, so there is no one bookmarks file.");
+  return sources[0].bookmarks;
 }
 
 /** The first 16 bytes of a file: enough to tell SQLite and plist files from JSON. */
@@ -97,8 +97,14 @@ function readHead(file: string): Buffer {
   }
 }
 
-/** The error for a bookmarks file that cannot be read, naming where to look instead. */
-function unreadable(browser: Browser, file: string, error: unknown): Error {
+/**
+ * The error for a bookmarks file that cannot be read, naming where to look
+ * instead; `others`, also the other browsers that have bookmarks. A file
+ * named by path (no browser) reads as Chrome's, as it always has.
+ */
+function unreadable(source: Source, error: unknown, others = true): Error {
+  const browser: Browser = source.browser ?? "chrome";
+  const file = source.bookmarks;
   const code = (error as NodeJS.ErrnoException).code;
   let message: string;
   if (browser === "safari" && (code === "EPERM" || code === "EACCES")) {
@@ -137,36 +143,47 @@ function unreadable(browser: Browser, file: string, error: unknown): Error {
       `${BROWSER_NAMES[browser]} profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
       `Choose one with --profile or ${PROFILE_ENV} (profile name or directory), or set ${PATH_ENV}.`;
   }
-  const others = browsersWithBookmarks(browser);
-  if (others.length > 0) {
+  const elsewhere = others ? browsersWithBookmarks(browser) : [];
+  if (elsewhere.length > 0) {
     message +=
-      ` Other browsers with bookmarks here: ${others.map((b) => BROWSER_NAMES[b]).join(", ")}` +
-      ` (choose one with --browser or ${BROWSER_ENV}: ${others.join(", ")}).`;
+      ` Other browsers with bookmarks here: ${elsewhere.map((b) => BROWSER_NAMES[b]).join(", ")}` +
+      ` (choose one with --browser or ${BROWSER_ENV}: ${elsewhere.join(", ")}).`;
   }
   return new Error(message);
 }
 
 /**
- * The root folders of the bookmarks file, keyed by root name. The file's
- * format is read from its first bytes, so MNEMOS_BOOKMARKS_PATH can point at
- * any supported browser's file: Chromium JSON, Firefox's places.sqlite or
- * Safari's binary Bookmarks.plist.
+ * The root folders of the one selected bookmarks file, keyed by root name;
+ * see sourceRoots().
  */
 export function loadRoots(): Record<string, BookmarkNode> {
-  const browser = selectedBrowser();
-  const file = bookmarksPath();
+  const { sources, multi } = selectSources();
+  if (multi) throw new Error("Several browsers are selected: read them with readBookmarks().");
+  return sourceRoots(sources[0]);
+}
+
+/**
+ * The root folders of a source's bookmarks file, keyed by root name. The
+ * file's format is read from its first bytes, so MNEMOS_BOOKMARKS_PATH can
+ * point at any supported browser's file: Chromium JSON, Firefox's
+ * places.sqlite or Safari's binary Bookmarks.plist. `others`: a missing file's
+ * error also names the other browsers with bookmarks.
+ */
+export function sourceRoots(source: Source, others = true): Record<string, BookmarkNode> {
+  const browser: Browser = source.browser ?? "chrome";
+  const file = source.bookmarks;
   let head: Buffer;
   try {
     head = readHead(file);
   } catch (e) {
-    throw unreadable(browser, file, e);
+    throw unreadable(source, e, others);
   }
   if (isSqlite(head)) return readFirefoxRoots(file);
   let data: Buffer;
   try {
     data = fs.readFileSync(file);
   } catch (e) {
-    throw unreadable(browser, file, e);
+    throw unreadable(source, e, others);
   }
   if (isBinaryPlist(head)) return readSafariRoots(file, data);
   if (data.toString("latin1", 0, 5) === "<?xml") {
@@ -309,22 +326,89 @@ const ROOT_LABELS: Record<string, string> = {
   synced: "Mobile Bookmarks",
 };
 
-export function* walkAll(): Generator<Visit> {
-  for (const [key, root] of Object.entries(loadRoots())) {
+/** The selected sources' bookmarks, read once for a tool call. */
+export interface Bookmarks {
+  /** Each source that could be read, with its root folders. */
+  read: { source: Source; roots: Record<string, BookmarkNode> }[];
+  /** Several browsers are selected: folder paths start with the browser's name. */
+  multi: boolean;
+  /** What the tool result reports. */
+  report: SourcesReport;
+}
+
+/** The sources a tool result read, and why any other selected source could not be. */
+export interface SourcesReport {
+  sources: Source[];
+  warnings?: string[];
+}
+
+/**
+ * Reads every selected source (sources.ts). With one browser selected, a
+ * source that cannot be read throws; with several, it becomes a warning, and
+ * only none being readable throws.
+ */
+export function readBookmarks(select?: SelectOptions): Bookmarks {
+  const selection = selectSources(select);
+  const warnings = [...selection.warnings];
+  for (const { browser, error } of selection.failures) warnings.push(`${BROWSER_NAMES[browser]}: ${error.message}`);
+  const read: Bookmarks["read"] = [];
+  for (const source of selection.sources) {
+    try {
+      read.push({ source, roots: sourceRoots(source, !selection.multi) });
+    } catch (e) {
+      if (!selection.multi) throw e;
+      warnings.push(`${sourceName(source)}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  if (read.length === 0) {
+    throw new Error(`None of the selected browsers' bookmarks could be read. ${warnings.join(" ")}`);
+  }
+  return {
+    read,
+    multi: selection.multi,
+    report: { sources: read.map((r) => r.source), ...(warnings.length > 0 ? { warnings } : {}) },
+  };
+}
+
+/** The folder path prefix of a source's bookmarks: its browser's name when several are selected. */
+export function sourcePrefix(source: Source, multi: boolean): string {
+  return multi ? `${sourceName(source)}${SEP}` : "";
+}
+
+/** A traversal of root folders, each root's label after `prefix`. */
+export function* walkRoots(roots: Record<string, BookmarkNode>, prefix = ""): Generator<Visit> {
+  for (const [key, root] of Object.entries(roots)) {
     // Chrome stores non-tree values alongside the roots (e.g. the
     // "sync_transaction_version" string). Requiring a folder-shaped node keeps
     // those out — they would otherwise show up as folders in list_folders,
     // which now reports folders that hold nothing.
     if (root && typeof root === "object" && isFolderNode(root) && !isTrash(root)) {
-      yield* walk(root, ROOT_LABELS[key] ?? key);
+      yield* walk(root, `${prefix}${ROOT_LABELS[key] ?? key}`);
     }
   }
 }
 
-export function* allBookmarks(): Generator<Entry> {
-  for (const visit of walkAll()) {
+/** Every selected source's folders and bookmarks; `bookmarks` defaults to reading them now. */
+export function* walkAll(bookmarks: Bookmarks = readBookmarks()): Generator<Visit> {
+  for (const { source, roots } of bookmarks.read) yield* walkRoots(roots, sourcePrefix(source, bookmarks.multi));
+}
+
+export function* allBookmarks(bookmarks?: Bookmarks): Generator<Entry> {
+  for (const visit of walkAll(bookmarks)) {
     if (visit.kind === "url") yield { folder: visit.folder, node: visit.node };
   }
+}
+
+/** The bookmarks under root folders, each folder path after `prefix`. */
+export function* rootBookmarks(roots: Record<string, BookmarkNode>, prefix = ""): Generator<Entry> {
+  for (const visit of walkRoots(roots, prefix)) {
+    if (visit.kind === "url") yield { folder: visit.folder, node: visit.node };
+  }
+}
+
+/** One source's bookmarks, folder paths without a browser prefix: what its index holds. */
+export function sourceBookmarks(source: Source): Generator<Entry> {
+  return rootBookmarks(sourceRoots(source));
 }
 
 /** Escape a user-supplied string for literal use inside a RegExp. */
@@ -433,9 +517,10 @@ export function searchBookmarks(query: string, folder?: string, limit?: number):
   // The filter is optional, so a blank one means "no filter" rather than an
   // error — unlike list_folder_contents, where the folder is the whole request.
   const filter = folder?.trim() ? folder : undefined;
+  const bookmarks = readBookmarks();
   const matches = [];
   const matchesQuery = keywordMatcher(words);
-  for (const entry of allBookmarks()) {
+  for (const entry of allBookmarks(bookmarks)) {
     if (filter && !folderMatches(entry.folder, filter)) continue;
     if (matchesQuery(entry)) {
       matches.push(fmt(entry));
@@ -451,9 +536,10 @@ export function searchBookmarks(query: string, folder?: string, limit?: number):
         ? `No bookmarks match "${query}" in folders matching "${filter}". The folder ` +
           "name may be wrong — call list_folders to check, or retry without `folder`."
         : `No bookmarks match "${query}".`,
+      ...bookmarks.report,
     };
   }
-  return { total_matches: matches.length, matches: matches.slice(0, cap(limit, 100)) };
+  return { total_matches: matches.length, matches: matches.slice(0, cap(limit, 100)), ...bookmarks.report };
 }
 
 export function listFolders(): unknown {
@@ -461,8 +547,9 @@ export function listFolders(): unknown {
   // subfolders or nothing at all: those names are part of the user's taxonomy
   // even when no bookmark sits directly inside them, and counting only folders
   // with direct children made them invisible.
+  const bookmarks = readBookmarks();
   const direct = new Map<string, number>();
-  for (const visit of walkAll()) {
+  for (const visit of walkAll(bookmarks)) {
     if (visit.kind === "folder") {
       if (!direct.has(visit.folder)) direct.set(visit.folder, 0);
     } else {
@@ -487,28 +574,30 @@ export function listFolders(): unknown {
       subtree_bookmarks: subtree.get(folder) ?? n,
     }));
   const total = [...direct.values()].reduce((sum, n) => sum + n, 0);
-  return { folders, total_bookmarks: total };
+  return { folders, total_bookmarks: total, ...bookmarks.report };
 }
 
 export function listFolderContents(folder: string, limit?: number): unknown {
   if (!folder.trim()) {
     throw new Error("Empty folder name. Call list_folders to see available folders.");
   }
+  const bookmarks = readBookmarks();
   const matches = [];
-  for (const entry of allBookmarks()) {
+  for (const entry of allBookmarks(bookmarks)) {
     if (folderMatches(entry.folder, folder)) {
       matches.push(fmt(entry));
     }
   }
   if (matches.length === 0) {
-    return { total_matches: 0, bookmarks: [], note: `No folder matches "${folder}".` };
+    return { total_matches: 0, bookmarks: [], note: `No folder matches "${folder}".`, ...bookmarks.report };
   }
-  return { total_matches: matches.length, bookmarks: matches.slice(0, cap(limit, 100)) };
+  return { total_matches: matches.length, bookmarks: matches.slice(0, cap(limit, 100)), ...bookmarks.report };
 }
 
 export function recentBookmarks(limit?: number): unknown {
+  const bookmarks = readBookmarks();
   const items: { added: number; entry: Entry }[] = [];
-  for (const entry of allBookmarks()) {
+  for (const entry of allBookmarks(bookmarks)) {
     // Corrupt far-future timestamps must not float to the top of the list:
     // only timestamps that render as a real date participate in ordering.
     const valid = chromeTimeToIso(entry.node.date_added) !== null;
@@ -536,12 +625,14 @@ export function recentBookmarks(limit?: number): unknown {
     total_matches: items.length,
     bookmarks: returned.map((i) => fmt(i.entry)),
     ...(note === undefined ? {} : { note }),
+    ...bookmarks.report,
   };
 }
 
 export function topDomains(limit?: number): unknown {
+  const bookmarks = readBookmarks();
   const counts = new Map<string, number>();
-  for (const entry of allBookmarks()) {
+  for (const entry of allBookmarks(bookmarks)) {
     let host = "";
     try {
       const url = new URL(entry.node.url ?? "");
@@ -560,5 +651,5 @@ export function topDomains(limit?: number): unknown {
     .map(([domain, n]) => ({ domain, bookmarks: n }));
   // Without the total, a truncated list reads as the user's complete set of
   // trusted sources — which is exactly how the tool description says to use it.
-  return { total_matches: counts.size, domains: top };
+  return { total_matches: counts.size, domains: top, ...bookmarks.report };
 }

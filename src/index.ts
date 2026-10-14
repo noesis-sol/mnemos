@@ -8,17 +8,22 @@
  * of, and what they have been saving recently.
  *
  * Startup flags (each wins over its environment variable):
- *   --browser <id>           as MNEMOS_BOOKMARKS_BROWSER
+ *   --browser <ids>          as MNEMOS_BOOKMARKS_BROWSER
  *   --profile <name>         as MNEMOS_PROFILE
  *
  * Environment variables:
- *   MNEMOS_BOOKMARKS_BROWSER chrome (default), chrome-beta, chrome-dev,
- *                            chrome-canary, chromium, edge, brave, vivaldi,
- *                            opera, firefox, librewolf, waterfox, zen, floorp,
- *                            tor-browser or safari
- *   MNEMOS_PROFILE           Profile display name or directory (default: the
- *                            profile the browser last used, else Default; for
- *                            Firefox and its forks, the one it opens); CHROME_PROFILE is an
+ *   MNEMOS_BOOKMARKS_BROWSER default (the system default browser; the
+ *                            default), all (every browser with bookmarks),
+ *                            or one or more of chrome, chrome-beta,
+ *                            chrome-dev, chrome-canary, chromium, edge, brave,
+ *                            vivaldi, opera, firefox, librewolf, waterfox,
+ *                            zen, floorp, tor-browser and safari, separated
+ *                            by commas (sources.ts). Chrome when unset and
+ *                            CHROME_PROFILE or CHROME_BOOKMARKS_PATH is set
+ *   MNEMOS_PROFILE           Profile display name or directory, for one
+ *                            browser only (default: the profile the browser
+ *                            last used, else Default; for Firefox and its
+ *                            forks, the one it opens); CHROME_PROFILE is an
  *                            older alias
  *   MNEMOS_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
  *                            file (overrides the above); CHROME_BOOKMARKS_PATH
@@ -42,12 +47,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as lib from "./lib.js";
-import { parseStartupArgs, setStartupOptions } from "./browsers.js";
+import { checkSelection, parseStartupArgs, setStartupOptions } from "./browsers.js";
 import { ICONS } from "./icon.js";
 import { createEmbedder } from "./embedder.js";
 import { Indexer } from "./indexer.js";
 import { Fetcher } from "./fetcher.js";
 import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
+import { SourceIndexes } from "./source-indexes.js";
+import { selectSources } from "./sources.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -77,13 +84,19 @@ async function safelyAsync(fn: () => Promise<unknown>): Promise<ToolResult> {
 }
 
 const embedder = createEmbedder();
-/** Embeds bookmark titles in the background; semantic_search reads what it stores. */
-const indexer = new Indexer({ embedder });
 /**
- * Fetches bookmarked pages and stores their text, in the one process holding
- * the fetcher lease; the indexer then chunks and embeds what it stored.
+ * Per selected bookmarks file: an indexer that embeds its titles in the
+ * background, for semantic_search to read, and a fetcher that fetches its
+ * pages and stores their text, in the one process holding that index's
+ * fetcher lease; the indexer then chunks and embeds what it stored.
  */
-const fetcher = new Fetcher({ onPage: () => indexer.pagesChanged() });
+const indexes = new SourceIndexes((source) => {
+  const bookmarksFile = () => source.bookmarks;
+  const entries = () => lib.sourceBookmarks(source);
+  const indexer = new Indexer({ embedder, bookmarksFile, entries });
+  const fetcher = new Fetcher({ bookmarksFile, entries, onPage: () => indexer.pagesChanged() });
+  return { indexer, fetcher };
+});
 
 const server = new McpServer(
   { name: "mnemos", version: VERSION, icons: ICONS },
@@ -98,7 +111,11 @@ const server = new McpServer(
       "meaning: related wording, synonyms, or titles in other languages than " +
       "the query's. Use list_folders to see their interest areas, top_domains " +
       "to see which sources they trust, and recent_bookmarks to see what they " +
-      "are currently focused on.",
+      "are currently focused on. Every result has `sources`, the browsers, " +
+      "profiles and bookmarks files it read; when several browsers are read, " +
+      "folder paths start with the browser's name. `warnings`, when present, " +
+      "name browsers whose bookmarks could not be read, so the result may be " +
+      "incomplete: tell the user.",
   },
 );
 
@@ -171,7 +188,7 @@ server.registerTool(
     },
   },
   async ({ query, folder, limit }) =>
-    safelyAsync(() => semanticSearch({ embedder, indexer, fetcher }, query, folder, limit)),
+    safelyAsync(() => semanticSearch({ embedder, indexes: (source) => indexes.get(source) }, query, folder, limit)),
 );
 
 server.registerTool(
@@ -249,14 +266,16 @@ server.registerTool(
 );
 
 
-/** Aborts the fetches in flight and gives the fetcher lease up, so another mnemos can take over. */
+/** Aborts the fetches in flight and gives the fetcher leases up, so another mnemos can take over. */
 function shutdown(): void {
-  fetcher.stop();
+  indexes.stop();
 }
 
 async function main(): Promise<void> {
   try {
-    setStartupOptions(parseStartupArgs(process.argv.slice(2)));
+    const options = parseStartupArgs(process.argv.slice(2));
+    checkSelection(process.env, options);
+    setStartupOptions(options);
   } catch (e) {
     console.error(`mnemos: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(2);
@@ -271,10 +290,9 @@ async function main(): Promise<void> {
     });
   }
   await server.connect(new StdioServerTransport());
-  // After connect, and on a later tick: the handshake never waits for indexing.
-  indexer.start();
-  // Pages after titles: the title pass is what makes semantic_search useful first.
-  void indexer.idle().then(() => fetcher.start());
+  // After connect, and on a later tick: the handshake never waits for finding
+  // the default browser or for indexing.
+  setImmediate(() => indexes.start(() => selectSources().sources));
 }
 
 main().catch((e) => {

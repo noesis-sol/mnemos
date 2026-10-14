@@ -130,6 +130,7 @@ test("Opera: another profile never falls back to the root-level file", () => {
 test("Chrome ignores a stray root-level Bookmarks file; only Opera reads one", () => {
   const base = browsers.chromiumBase("chrome");
   write(path.join(base, "Bookmarks"), chromiumFile("stray"));
+  process.env.MNEMOS_BOOKMARKS_BROWSER = "chrome";
   assert.equal(lib.bookmarksPath(), path.join(base, "Default", "Bookmarks"));
   assert.deepEqual(browsers.chromiumProfiles("chrome"), []);
 });
@@ -171,13 +172,13 @@ test("Linux: each Flatpak keeps the native directory names below its own config"
 
 test("existing Chrome configurations resolve as before", () => {
   const base = browsers.chromiumBase("chrome");
-  assert.equal(lib.bookmarksPath(), path.join(base, "Default", "Bookmarks"));
+  // CHROME_PROFILE and CHROME_BOOKMARKS_PATH still mean Chrome, now that the default is the system's browser.
   process.env.CHROME_PROFILE = "Profile 3";
   assert.equal(lib.bookmarksPath(), path.join(base, "Profile 3", "Bookmarks"));
   process.env.CHROME_BOOKMARKS_PATH = path.join(home, "x", "Bookmarks");
   assert.equal(lib.bookmarksPath(), path.join(home, "x", "Bookmarks"));
   assert.equal(
-    lib.bookmarksPath({ XDG_CONFIG_HOME: path.join(home, "xdg") }, "linux"),
+    lib.bookmarksPath({ MNEMOS_BOOKMARKS_BROWSER: "chrome", XDG_CONFIG_HOME: path.join(home, "xdg") }, "linux"),
     path.join(home, "xdg", "google-chrome", "Default", "Bookmarks"),
   );
 });

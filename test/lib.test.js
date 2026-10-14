@@ -153,7 +153,7 @@ test("bookmarksPath: CHROME_BOOKMARKS_PATH overrides everything", () => {
 });
 
 test("bookmarksPath regression: empty CHROME_PROFILE falls back to Default", () => {
-  const p = bookmarksPath({ CHROME_PROFILE: "" }, "darwin").replaceAll("\\", "/");
+  const p = bookmarksPath({ MNEMOS_BOOKMARKS_BROWSER: "chrome", CHROME_PROFILE: "" }, "darwin").replaceAll("\\", "/");
   assert.match(p, /\/Default\/Bookmarks$/);
 });
 
@@ -166,7 +166,7 @@ test("chromeBase regression: an empty env var means unset, never a relative path
   ]) {
     const base = chromeBase(platform, env);
     assert.ok(path.isAbsolute(base), `${platform} with empty env var gave relative: ${base}`);
-    assert.ok(path.isAbsolute(bookmarksPath({ ...env }, platform)));
+    assert.ok(path.isAbsolute(bookmarksPath({ ...env, MNEMOS_BOOKMARKS_BROWSER: "chrome" }, platform)));
   }
 });
 

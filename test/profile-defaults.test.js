@@ -37,6 +37,8 @@ beforeEach(() => {
     APPDATA: path.join(home, "AppData", "Roaming"),
   });
   for (const name of SELECTION_VARS) delete process.env[name];
+  // Chrome unless a test chooses another: never this machine's default browser.
+  process.env.MNEMOS_BOOKMARKS_BROWSER = "chrome";
 });
 
 afterEach(() => browsers.setStartupOptions({}));
@@ -78,14 +80,14 @@ test("Chromium: without a profile, Local State's last_used is read", () => {
 
 test("Chromium: a Local State without last_used (Edge, Brave with one profile) means Default", () => {
   const base = makeChromium("edge", ["Default"], fixture("edge-local-state.json"));
-  browsers.setStartupOptions({ browser: "edge" });
+  browsers.setStartupOptions({ browser: ["edge"] });
   assert.equal(lib.bookmarksPath(), path.join(base, "Default", "Bookmarks"));
   assert.deepEqual(titles(), ["Default page"]);
 });
 
 test("Chromium: no Local State, or one that is not JSON, means Default", () => {
   const base = makeChromium("brave", ["Default", "Profile 1"]);
-  browsers.setStartupOptions({ browser: "brave" });
+  browsers.setStartupOptions({ browser: ["brave"] });
   assert.equal(lib.bookmarksPath(), path.join(base, "Default", "Bookmarks"));
   write(path.join(base, "Local State"), '{"profile": {"last_used": "Profile 1"'); // cut off mid-write
   assert.equal(lib.bookmarksPath(), path.join(base, "Default", "Bookmarks"));
@@ -115,7 +117,7 @@ test("Opera: without last_used, Default is the root-level Bookmarks file", () =>
   const base = browsers.chromiumBase("opera");
   write(path.join(base, "Bookmarks"), chromiumFile("opera root"));
   write(path.join(base, "Local State"), "{}");
-  browsers.setStartupOptions({ browser: "opera" });
+  browsers.setStartupOptions({ browser: ["opera"] });
   assert.equal(lib.bookmarksPath(), path.join(base, "Bookmarks"));
 });
 
@@ -138,7 +140,7 @@ test("Chromium: --profile takes a display name from Local State, exactly or igno
 test("Chromium: a directory's name wins over another profile's display name", () => {
   // Edge names its Default profile "Profile 1"; a directory called Profile 1 is still Profile 1.
   const base = makeChromium("edge", ["Default"], fixture("edge-local-state.json"));
-  browsers.setStartupOptions({ browser: "edge", profile: "Profile 1" });
+  browsers.setStartupOptions({ browser: ["edge"], profile: "Profile 1" });
   assert.equal(lib.bookmarksPath(), path.join(base, "Default", "Bookmarks"));
   write(path.join(base, "Profile 1", "Bookmarks"), chromiumFile("Profile 1 page"));
   assert.equal(lib.bookmarksPath(), path.join(base, "Profile 1", "Bookmarks"));
@@ -186,13 +188,13 @@ const places = (base, dir) => path.join(base, "Profiles", dir, "places.sqlite");
 
 test("Firefox: without installs.ini the profile marked Default=1 is read", () => {
   const base = makeFirefox(false);
-  browsers.setStartupOptions({ browser: "firefox" });
+  browsers.setStartupOptions({ browser: ["firefox"] });
   assert.equal(lib.bookmarksPath(), places(base, "aaaa.default"));
 });
 
 test("Firefox: installs.ini's Default names the profile the install opens", () => {
   const base = makeFirefox(true);
-  browsers.setStartupOptions({ browser: "firefox" });
+  browsers.setStartupOptions({ browser: ["firefox"] });
   assert.equal(lib.bookmarksPath(), places(base, "cccc.work"));
   assert.deepEqual(
     browsers.firefoxProfiles(base).map((p) => [p.name, p.isDefault]),
@@ -203,7 +205,7 @@ test("Firefox: installs.ini's Default names the profile the install opens", () =
 test("Firefox: an installs.ini Default naming no listed profile is passed over", () => {
   const base = makeFirefox(false);
   write(path.join(base, "installs.ini"), "[ABCDEF]\nDefault=Profiles/gone.default\n\n[123456]\nDefault=Profiles/bbbb.default-release\n");
-  browsers.setStartupOptions({ browser: "firefox" });
+  browsers.setStartupOptions({ browser: ["firefox"] });
   assert.equal(lib.bookmarksPath(), places(base, "bbbb.default-release"));
   write(path.join(base, "installs.ini"), "[ABCDEF]\nDefault=Profiles/gone.default\n");
   assert.equal(lib.bookmarksPath(), places(base, "aaaa.default"));
@@ -211,9 +213,9 @@ test("Firefox: an installs.ini Default naming no listed profile is passed over",
 
 test("Firefox: --profile takes the Name= display name, exactly or ignoring case", () => {
   const base = makeFirefox(false);
-  browsers.setStartupOptions({ browser: "firefox", profile: "Work" });
+  browsers.setStartupOptions({ browser: ["firefox"], profile: "Work" });
   assert.equal(lib.bookmarksPath(), places(base, "cccc.work"));
-  browsers.setStartupOptions({ browser: "firefox", profile: "work" });
+  browsers.setStartupOptions({ browser: ["firefox"], profile: "work" });
   assert.equal(lib.bookmarksPath(), places(base, "cccc.work"));
 });
 
@@ -221,7 +223,7 @@ test("Firefox: an unknown profile's error lists the profiles as 'Name (directory
   const base = makeFirefox(true);
   write(places(base, "cccc.work"), "");
   write(places(base, "aaaa.default"), "");
-  browsers.setStartupOptions({ browser: "firefox", profile: "Personal" });
+  browsers.setStartupOptions({ browser: ["firefox"], profile: "Personal" });
   assert.throws(
     () => lib.bookmarksPath(),
     (err) => {

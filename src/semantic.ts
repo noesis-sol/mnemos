@@ -14,12 +14,21 @@
  * the status: indexing progress, the embedder's state, whether page
  * fetching is disabled, how many pages are in each fetch state, and how many
  * pages wait for a browser there is none of.
+ *
+ * Several sources (--browser with a list, or all): each bookmarks file has
+ * its own index (source-indexes.ts). The query is embedded once and scored
+ * against every index; the candidates of all sources are then ranked as one
+ * library: one cutoff, from the median of all their titles' scores, and
+ * keyword hits first. A source whose index is not open yet contributes its
+ * keyword hits only. The status adds the sources' progress and page counts up.
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
 import { fetchingDisabled, type Fetcher } from "./fetcher.js";
-import { bookmarkRows, type Indexer, type IndexScores } from "./indexer.js";
+import { bookmarkRows, type Indexer, type IndexerStatus, type IndexScores } from "./indexer.js";
 import * as lib from "./lib.js";
+import type { SourceIndex } from "./source-indexes.js";
+import { sourceName, type Source } from "./sources.js";
 
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 100;
@@ -33,8 +42,10 @@ export const QUERY_EMBED_TIMEOUT_MS = 3_000;
 
 export interface SemanticContext {
   embedder: Embedder;
-  indexer: Indexer;
-  /** The page fetcher, whose state the status reports; absent, it is not reported. */
+  /** The index of each source's bookmarks file (SourceIndexes.get); without it, `indexer` serves every source. */
+  indexes?: (source: Source) => SourceIndex;
+  indexer?: Indexer;
+  /** The page fetcher of `indexer`, whose state the status reports; absent, it is not reported. */
   fetcher?: Fetcher;
   /** Defaults to process.env. */
   env?: NodeJS.ProcessEnv;
@@ -150,6 +161,16 @@ function round(score: number): number {
   return Math.round(score * 1000) / 1000;
 }
 
+/** The worst of the indexes' states: failed, then indexing, not started, ready. */
+function combinedState(statuses: IndexerStatus[]): IndexerStatus["state"] {
+  const order: IndexerStatus["state"][] = ["failed", "indexing", "not_started", "ready"];
+  return order.find((state) => statuses.some((s) => s.state === state)) ?? "ready";
+}
+
+function sum(values: number[]): number {
+  return values.reduce((total, n) => total + n, 0);
+}
+
 export async function semanticSearch(
   ctx: SemanticContext,
   query: string,
@@ -164,27 +185,48 @@ export async function semanticSearch(
     );
   }
   const filter = folder?.trim() ? folder : undefined;
-  const { embedder, indexer } = ctx;
-  indexer.checkForChanges();
-
-  const entries = [...lib.allBookmarks()];
-  const guids = bookmarkRows(entries).map((row) => row.guid);
+  const { embedder } = ctx;
+  const bookmarks = lib.readBookmarks();
+  let single: SourceIndex | undefined;
+  const indexOf = (source: Source): SourceIndex => {
+    if (ctx.indexes) return ctx.indexes(source);
+    if (!ctx.indexer) throw new Error("semantic search has no index");
+    return (single ??= { indexer: ctx.indexer, fetcher: ctx.fetcher });
+  };
+  // Each source read: its bookmarks as its index keys them (folder paths with
+  // no browser prefix), the prefix results show, and its index.
+  const parts = bookmarks.read.map(({ source, roots }) => {
+    const entries = [...lib.rootBookmarks(roots)];
+    return {
+      source,
+      entries,
+      guids: bookmarkRows(entries).map((row) => row.guid),
+      prefix: lib.sourcePrefix(source, bookmarks.multi),
+      index: indexOf(source),
+    };
+  });
+  const indexes = [...new Set(parts.map((part) => part.index))];
+  for (const { indexer } of indexes) indexer.checkForChanges();
   const keywordHit = lib.keywordMatcher(words);
 
   // Semantic scores, or the reason there are none. A model not started yet
   // (after a restart there are no titles to embed, so nothing else loads it)
   // is started by this query, which is answered semantically if it loads in time.
   const embedderStatus = embedder.status();
-  let scores: IndexScores | undefined;
+  const scored = new Map<SourceIndex, IndexScores>();
   let fallback: string | undefined;
   if (embedderStatus.state !== "ready" && embedderStatus.state !== "not_started") {
     fallback = notReadyReason(embedderStatus);
   } else {
     try {
-      scores = indexer.scores(await embedQuery(embedder, query, QUERY_EMBED_TIMEOUT_MS));
-      if (!scores) {
-        const { state, error } = indexer.status();
-        fallback = state === "failed" ? `the index could not be built: ${error}` : "the index is not open yet";
+      const vector = await embedQuery(embedder, query, QUERY_EMBED_TIMEOUT_MS);
+      for (const index of indexes) {
+        const scores = index.indexer.scores(vector);
+        if (scores) scored.set(index, scores);
+      }
+      if (scored.size === 0) {
+        const failed = indexes.map((i) => i.indexer.status()).find((s) => s.state === "failed");
+        fallback = failed ? `the index could not be built: ${failed.error}` : "the index is not open yet";
       }
     } catch (err) {
       const now = embedder.status();
@@ -193,26 +235,32 @@ export async function semanticSearch(
   }
 
   const candidates: { entry: lib.Entry; keyword: boolean; score: number | null; page?: string }[] = [];
-  entries.forEach((entry, i) => {
-    if (filter && !lib.folderMatches(entry.folder, filter)) return;
-    const keyword = keywordHit(entry);
-    const title = scores?.titles.get(guids[i]);
-    const page = scores?.pages.get(entry.node.url ?? "");
-    if (page !== undefined && (title === undefined || page.score > title)) {
-      candidates.push({ entry, keyword, score: page.score, page: page.text });
-    } else {
-      candidates.push({ entry, keyword, score: title ?? null });
-    }
-  });
+  for (const part of parts) {
+    const scores = scored.get(part.index);
+    part.entries.forEach((local, i) => {
+      const entry = { folder: part.prefix + local.folder, node: local.node };
+      if (filter && !lib.folderMatches(entry.folder, filter)) return;
+      const keyword = keywordHit(entry);
+      const title = scores?.titles.get(part.guids[i]);
+      const page = scores?.pages.get(entry.node.url ?? "");
+      if (page !== undefined && (title === undefined || page.score > title)) {
+        candidates.push({ entry, keyword, score: page.score, page: page.text });
+      } else {
+        candidates.push({ entry, keyword, score: title ?? null });
+      }
+    });
+  }
 
   let hits: typeof candidates;
-  if (!scores) {
+  if (scored.size === 0) {
     hits = candidates.filter((c) => c.keyword);
   } else {
+    // One library: the median and the margin's scale over every source's titles.
+    const titleScores = [...scored.values()].flatMap((scores) => [...scores.titles.values()]);
     const { floor, window } = embedder.relevance;
-    const margin = relevanceMargin(embedder.relevance, scores.titles.size);
+    const margin = relevanceMargin(embedder.relevance, titleScores.length);
     const best = candidates.reduce((max, c) => Math.max(max, c.score ?? -Infinity), -Infinity);
-    const cutoff = Math.max(floor, median(scores.titles.values()) + margin, best - window);
+    const cutoff = Math.max(floor, median(titleScores) + margin, best - window);
     hits = candidates.filter((c) => c.keyword || (c.score !== null && c.score >= cutoff));
     // Keyword hits first; each group by score, unscored last. sort() is stable.
     hits.sort((a, b) => Number(b.keyword) - Number(a.keyword) || (b.score ?? -Infinity) - (a.score ?? -Infinity));
@@ -229,32 +277,63 @@ export async function semanticSearch(
     };
   });
 
-  const { state: titlesState, titles_done, titles_total } = indexer.status();
-  const pagesTotal = new Set(entries.map((e) => e.node.url ?? "").filter((url) => /^https?:/i.test(url))).size;
+  // Progress and counts, added up over the indexes.
+  const statuses = indexes.map((index) => index.indexer.status());
+  const titlesDone = sum(statuses.map((s) => s.titles_done));
+  const titlesTotal = sum(
+    indexes.map((index, i) => {
+      const read = sum(parts.filter((part) => part.index === index).map((part) => part.entries.length));
+      return statuses[i].titles_total || read;
+    }),
+  );
+  const titlesState = combinedState(statuses);
+  const pagesTotal = sum(
+    parts.map(
+      (part) => new Set(part.entries.map((e) => e.node.url ?? "").filter((url) => /^https?:/i.test(url))).size,
+    ),
+  );
+  const pageStates: Record<string, number> = {};
+  for (const index of indexes) {
+    for (const [state, n] of Object.entries(index.indexer.pageCounts())) pageStates[state] = (pageStates[state] ?? 0) + (n ?? 0);
+  }
   let note: string | undefined;
   if (fallback) {
     note = `Keyword matches only (as search_bookmarks): ${fallback}. Retry later for semantic results.`;
+  } else if (titlesState === "failed") {
+    const errors = statuses.filter((s) => s.state === "failed").map((s) => s.error);
+    note =
+      `Some sources' indexes could not be built (${errors.join("; ")}); ` +
+      "their bookmarks are found only by exact words for now.";
   } else if (titlesState !== "ready") {
     note =
-      `Bookmark titles are still being embedded (${titles_done} of ${titles_total || entries.length}); ` +
+      `Bookmark titles are still being embedded (${titlesDone} of ${titlesTotal}); ` +
       "the rest are found only by exact words for now.";
   }
-  const browser = ctx.fetcher?.browserNote();
+  // Each fetcher's state; prefixed with its source's browser when the sources' states differ.
+  const fetchers = indexes.flatMap((index) => (index.fetcher ? [{ index, fetcher: index.fetcher }] : []));
+  const fetching = fetchers.map(({ fetcher }) => fetcherState(fetcher));
+  const fetchingText =
+    new Set(fetching).size <= 1
+      ? fetching[0]
+      : fetchers
+          .map(({ index }, i) => `${sourceName(parts.find((part) => part.index === index)!.source)}: ${fetching[i]}`)
+          .join("; ");
+  const browser = fetchers.map(({ fetcher }) => fetcher.browserNote()).find((n) => n !== undefined);
   const status = {
-    progress: `titles ${titles_done}/${titles_total || entries.length} · pages ${indexer.embeddedPages()}/${pagesTotal}`,
-    search: scores ? "semantic" : "keyword",
+    progress: `titles ${titlesDone}/${titlesTotal} · pages ${sum(indexes.map((i) => i.indexer.embeddedPages()))}/${pagesTotal}`,
+    search: scored.size > 0 ? "semantic" : "keyword",
     indexing: titlesState.replace("_", " "),
     embedder: embedderState(embedder.status()),
     fetching_disabled: fetchingDisabled(ctx.env),
     // Pages per fetch state: pending, ok, needs_browser, needs_login, no_content, failed, skipped.
-    page_states: indexer.pageCounts(),
-    ...(ctx.fetcher ? { fetching: fetcherState(ctx.fetcher) } : {}),
+    page_states: pageStates,
+    ...(fetchingText !== undefined ? { fetching: fetchingText } : {}),
     // "N pages need a browser; set MNEMOS_BROWSER", while there is none to render them with.
     ...(browser ? { browser } : {}),
     ...(note ? { note } : {}),
   };
   // Once per index: tell the user their pages are being fetched, and how to stop it.
-  const notice = ctx.fetcher?.takeNote();
+  const notice = fetchers.map(({ fetcher }) => fetcher.takeNote()).find((n) => n !== undefined);
 
   if (hits.length === 0) {
     return {
@@ -262,13 +341,20 @@ export async function semanticSearch(
       results: [],
       status,
       note:
-        (scores ? `Nothing relates closely to "${query}"` : `No bookmarks match "${query}"`) +
+        (scored.size > 0 ? `Nothing relates closely to "${query}"` : `No bookmarks match "${query}"`) +
         (filter
           ? ` in folders matching "${filter}". The folder name may be wrong — call list_folders ` +
             "to check, or retry without `folder`."
           : "."),
       ...(notice ? { notice } : {}),
+      ...bookmarks.report,
     };
   }
-  return { count_above_threshold: hits.length, results, status, ...(notice ? { notice } : {}) };
+  return {
+    count_above_threshold: hits.length,
+    results,
+    status,
+    ...(notice ? { notice } : {}),
+    ...bookmarks.report,
+  };
 }

@@ -67,9 +67,15 @@ export const BROWSER_NAMES: Record<Browser, string> = {
   safari: "Safari",
 };
 
+/**
+ * What --browser or MNEMOS_BOOKMARKS_BROWSER chose: the system default
+ * browser, every browser with bookmarks here, or the browsers listed.
+ */
+export type BrowserSelection = "default" | "all" | Browser[];
+
 /** What the --browser and --profile startup flags chose; each wins over its environment variable. */
 export interface StartupOptions {
-  browser?: Browser;
+  browser?: BrowserSelection;
   profile?: string;
 }
 
@@ -93,28 +99,78 @@ export function parseStartupArgs(args: string[]): StartupOptions {
     allowPositionals: false,
   });
   const options: StartupOptions = {};
-  if (values.browser !== undefined) options.browser = browserNamed(values.browser, "--browser");
+  if (values.browser !== undefined) options.browser = parseBrowserSelection(values.browser, "--browser");
   if (values.profile) options.profile = values.profile;
   return options;
 }
 
-function browserNamed(value: string, source: string): Browser {
-  const id = value.trim().toLowerCase();
-  if ((BROWSERS as readonly string[]).includes(id)) return id as Browser;
-  throw new Error(`${source} is "${value}"; use one of: ${BROWSERS.join(", ")}.`);
+/**
+ * `value` as a selection: `default`, `all`, or browser ids separated by
+ * commas (case and spaces ignored, repeats dropped). Anything else is an
+ * error that lists the valid ids, naming `source` (the flag or variable).
+ */
+export function parseBrowserSelection(value: string, source: string): BrowserSelection {
+  const text = value.trim().toLowerCase();
+  if (text === "default" || text === "all") return text;
+  const ids = text.split(",").map((id) => id.trim());
+  const unknown = ids.filter((id) => !(BROWSERS as readonly string[]).includes(id));
+  if (unknown.length > 0) {
+    const which = ids.length > 1 ? ` (${unknown.map((id) => `"${id}"`).join(", ")} unknown)` : "";
+    throw new Error(
+      `${source} is "${value}"${which}; use default, all, or one or more of these, ` +
+        `separated by commas: ${BROWSERS.join(", ")}.`,
+    );
+  }
+  return [...new Set(ids)] as Browser[];
+}
+
+/** Whether `selection` names more than one browser: `all`, or a list of two or more. */
+export function isMultiBrowser(selection: BrowserSelection): boolean {
+  return selection === "all" || (Array.isArray(selection) && selection.length > 1);
 }
 
 /**
- * The browser the --browser flag names, else MNEMOS_BOOKMARKS_BROWSER; Chrome
- * when neither is set (an empty variable counts as unset).
+ * The browsers the --browser flag names, else MNEMOS_BOOKMARKS_BROWSER (an
+ * empty variable counts as unset). Without either, Chrome when the older
+ * CHROME_PROFILE or CHROME_BOOKMARKS_PATH is set, as before there was a
+ * choice; else the system default browser.
  */
-export function selectedBrowser(
+export function selectedBrowsers(
   env: NodeJS.ProcessEnv = process.env,
   options: StartupOptions = startupOptions,
-): Browser {
+): BrowserSelection {
   if (options.browser) return options.browser;
-  const value = (env[BROWSER_ENV] ?? "").trim();
-  return value ? browserNamed(env[BROWSER_ENV] ?? "", BROWSER_ENV) : "chrome";
+  const value = env[BROWSER_ENV] ?? "";
+  if (value.trim()) return parseBrowserSelection(value, BROWSER_ENV);
+  if (env.CHROME_PROFILE || env.CHROME_BOOKMARKS_PATH) return ["chrome"];
+  return "default";
+}
+
+/**
+ * Checks the selection at startup: MNEMOS_BOOKMARKS_BROWSER must parse, and
+ * a profile or a bookmarks file applies to one browser, never to a list or
+ * to all. Throws the error to stop with.
+ */
+export function checkSelection(
+  env: NodeJS.ProcessEnv = process.env,
+  options: StartupOptions = startupOptions,
+): void {
+  const selection = selectedBrowsers(env, options);
+  if (!isMultiBrowser(selection)) return;
+  const chosenBy = options.browser ? "--browser" : BROWSER_ENV;
+  const chosen = Array.isArray(selection) ? selection.join(",") : selection;
+  const profile = selectedProfile(env, options);
+  if (profile) {
+    const by = options.profile ? "--profile" : env[PROFILE_ENV] ? PROFILE_ENV : "CHROME_PROFILE";
+    throw new Error(
+      `${by} ("${profile}") picks a profile of one browser, but ${chosenBy} is "${chosen}". ` +
+        `Choose one browser, or leave the profile out to read each browser's default profile.`,
+    );
+  }
+  if (bookmarksPathOverride(env)) {
+    const by = env[PATH_ENV] ? PATH_ENV : "CHROME_BOOKMARKS_PATH";
+    throw new Error(`${by} names one bookmarks file, but ${chosenBy} is "${chosen}". Unset one of them.`);
+  }
 }
 
 /** The profile the --profile flag names, else MNEMOS_PROFILE, else CHROME_PROFILE; undefined for the browser's default. */

@@ -57,17 +57,17 @@ const titles = (items) => items.map((m) => m.title);
 // Choosing a browser, and the Chromium family
 // ---------------------------------------------------------------------------
 
-test("MNEMOS_BOOKMARKS_BROWSER: unset or empty means Chrome; case and spaces ignored", () => {
-  assert.equal(browsers.selectedBrowser({}), "chrome");
-  assert.equal(browsers.selectedBrowser({ MNEMOS_BOOKMARKS_BROWSER: "" }), "chrome");
-  assert.equal(browsers.selectedBrowser({ MNEMOS_BOOKMARKS_BROWSER: " Firefox " }), "firefox");
+test("MNEMOS_BOOKMARKS_BROWSER: unset or empty means the default browser; case and spaces ignored", () => {
+  assert.equal(browsers.selectedBrowsers({}, {}), "default");
+  assert.equal(browsers.selectedBrowsers({ MNEMOS_BOOKMARKS_BROWSER: "" }, {}), "default");
+  assert.deepEqual(browsers.selectedBrowsers({ MNEMOS_BOOKMARKS_BROWSER: " Firefox " }, {}), ["firefox"]);
 });
 
 test("MNEMOS_BOOKMARKS_BROWSER: an unknown browser is an error naming the choices", () => {
   process.env.MNEMOS_BOOKMARKS_BROWSER = "netscape";
   assert.throws(
     () => lib.listFolders(),
-    /MNEMOS_BOOKMARKS_BROWSER is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, librewolf, waterfox, zen, floorp, tor-browser, safari\./,
+    /MNEMOS_BOOKMARKS_BROWSER is "netscape"; use default, all, or one or more of these, separated by commas: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, librewolf, waterfox, zen, floorp, tor-browser, safari\./,
   );
 });
 

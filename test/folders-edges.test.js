@@ -99,6 +99,7 @@ test("list_folder_contents: no matching folder gives total 0 and a note", () => 
     total_matches: 0,
     bookmarks: [],
     note: 'No folder matches "Nonexistent".',
+    sources: [{ browser: "chrome", profile: null, bookmarks: process.env.CHROME_BOOKMARKS_PATH }],
   });
 });
 

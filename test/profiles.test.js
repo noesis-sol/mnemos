@@ -34,6 +34,8 @@ beforeEach(() => {
   process.env.LOCALAPPDATA = path.join(home, "AppData", "Local");
   delete process.env.CHROME_BOOKMARKS_PATH;
   delete process.env.CHROME_PROFILE;
+  // Chrome, as with CHROME_PROFILE set: never this machine's default browser.
+  process.env.MNEMOS_BOOKMARKS_BROWSER = "chrome";
 });
 
 /** The fake Chrome directory, checked to sit inside this test's temp home. */

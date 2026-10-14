@@ -236,7 +236,7 @@ root entry and that matrix in step.
   data, integers, real and boolean; hand-built files for integer widths, UIDs, long strings,
   shared objects, cycles, nesting past the limit and malformed files.
   `test/browsers-server.test.js` (e2e): a Safari plist searched over MCP with its description;
-  an unknown browser is `isError`. `test/chromium-registry.test.js` (unit): Chrome Beta, Dev,
+  an unknown `MNEMOS_BOOKMARKS_BROWSER` stops the server at startup, listing the ids. `test/chromium-registry.test.js` (unit): Chrome Beta, Dev,
   Canary and Opera directories per platform (Opera under the roaming `APPDATA`), each reading its
   profile's file; Opera's root-level `Bookmarks` as the `Default` profile unless `Default/` has
   one, listed in the missing-profile error; Linux Snap and Flatpak directories chosen by their
@@ -259,8 +259,8 @@ root entry and that matrix in step.
 
 - **Reached by**: `src/default-browser.ts`: `defaultBrowser` (detected once per process),
   `resolveDefaultBrowser`, `detectDefaultBrowserId`, `identifyBrowser` and the tables mapping
-  macOS bundle ids, Windows ProgIds and Linux `.desktop` names to browser ids. Not yet reachable
-  from a tool or flag: `--browser default` (mnemos-5ij.5) will use it.
+  macOS bundle ids, Windows ProgIds and Linux `.desktop` names to browser ids; reached through
+  `--browser default`, the default (see Browser selection and sources).
 - **Tests**: `test/default-browser.test.js` (unit, each command's output injected, files in a
   temp home): every table value a browser id, every browser reachable per platform, no key both
   supported and unsupported; bundle ids in any case, ProgIds with an install's suffix, Snap and
@@ -276,6 +276,30 @@ root entry and that matrix in step.
 - **Untested**: the real `osascript`, `reg` and `xdg-settings` commands (`osascript` checked by
   hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11.
 - **Tickets**: mnemos-5ij.3
+
+## Browser selection and sources
+
+- **Reached by**: `--browser` / `MNEMOS_BOOKMARKS_BROWSER` as `default` (the default), a browser
+  id, a comma-separated list or `all` (`browsers.parseBrowserSelection`, `selectedBrowsers`,
+  `checkSelection` at startup); `src/sources.ts` (`selectSources`, `browserSource`); `lib.readBookmarks`,
+  the `sources` and `warnings` of every tool result, folder paths prefixed with the browser's name
+  when several are selected; `src/source-indexes.ts` (one indexer and fetcher per bookmarks file)
+  and `semantic.ts` merging the indexes; the server instructions.
+- **Tests**: `test/browser-selection.test.js` (unit, a fake home, the default browser injected;
+  and e2e over MCP): parsing (case, spaces, repeats; unknown ids listed, `default` and `all`
+  alone); precedence of `--browser` over `MNEMOS_BOOKMARKS_BROWSER` over `CHROME_PROFILE` /
+  `CHROME_BOOKMARKS_PATH` meaning Chrome over the default browser, without detecting it; the
+  startup check refusing a profile or a bookmarks path with several browsers; `default` reading
+  the detected browser's last-used profile, its warning passed on and its error thrown; a list
+  with a missing Firefox and a missing Edge profile giving warnings, every source failing an
+  error, one browser failing an error as before; `all` and none found; each keyword tool's
+  `sources`, `warnings` and prefixed folders, and the folder filter matching the browser's name;
+  `semantic_search` over two indexes ranked as one, progress added up, the prefix kept out of the
+  index; over MCP, every tool's `sources` and `warnings` with a list, one source and no warnings
+  with one browser, the instructions naming both, and `--profile` with a list stopping the server.
+- **Untested**: `default` detected for real in a spawned server (the detection commands are
+  tested in `test/default-browser.test.js`); several fetchers at once against real sites.
+- **Tickets**: mnemos-5ij.5
 
 ## Page fetch policy and safe fetch
 

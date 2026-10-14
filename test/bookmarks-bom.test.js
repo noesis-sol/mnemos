@@ -49,10 +49,13 @@ test("bom: the fixture written with a byte order mark starts with one", () => {
 
 for (const [name, fn] of Object.entries(TOOLS)) {
   test(`bom: ${name} returns the same bookmarks as without the mark`, () => {
-    const plain = readWith(FIXTURE, fn);
-    const marked = readWith(BOM_FIXTURE, fn);
+    // Each result names the file it read; the rest must be the same.
+    const { sources: plainSources, ...plain } = readWith(FIXTURE, fn);
+    const { sources: markedSources, ...marked } = readWith(BOM_FIXTURE, fn);
     assert.equal(marked.error, undefined);
     assert.deepEqual(marked, plain);
+    assert.deepEqual(markedSources, [{ browser: "chrome", profile: null, bookmarks: BOM_FIXTURE }]);
+    assert.deepEqual(plainSources, [{ browser: "chrome", profile: null, bookmarks: FIXTURE }]);
   });
 }
 

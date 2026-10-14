@@ -1,9 +1,10 @@
 // Other browsers over MCP: the built server, spawned and driven with the SDK's
 // client, reads a Safari Bookmarks.plist through CHROME_BOOKMARKS_PATH and
 // returns descriptions over the wire; an unknown MNEMOS_BOOKMARKS_BROWSER
-// comes back as isError.
+// stops it at startup.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -60,10 +61,13 @@ test("e2e browsers: a Safari Bookmarks.plist is searched, description included",
   });
 });
 
-test("e2e browsers: an unknown MNEMOS_BOOKMARKS_BROWSER is isError", async () => {
-  await withServer({ MNEMOS_BOOKMARKS_BROWSER: "netscape" }, async (client) => {
-    const result = await client.callTool({ name: "list_folders", arguments: {} });
-    assert.equal(result.isError, true);
-    assert.match(result.content[0].text, /MNEMOS_BOOKMARKS_BROWSER is "netscape"/);
+test("e2e browsers: an unknown MNEMOS_BOOKMARKS_BROWSER stops the server at startup, listing the ids", () => {
+  const run = spawnSync(process.execPath, [path.join(ROOT, "dist", "index.js")], {
+    env: { ...process.env, ...INDEX_ENV, CHROME_BOOKMARKS_PATH: "", MNEMOS_BOOKMARKS_BROWSER: "netscape" },
+    input: "",
+    encoding: "utf-8",
+    timeout: 30_000,
   });
+  assert.equal(run.status, 2, run.stderr);
+  assert.match(run.stderr, /mnemos: MNEMOS_BOOKMARKS_BROWSER is "netscape"; use default, all, or one or more of these, separated by commas: chrome, /);
 });

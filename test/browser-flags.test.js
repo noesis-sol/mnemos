@@ -63,9 +63,9 @@ const chromiumFile = (name) =>
 
 test("parseStartupArgs: --browser and --profile, spaced or with =, browser case ignored", () => {
   assert.deepEqual(browsers.parseStartupArgs([]), {});
-  assert.deepEqual(browsers.parseStartupArgs(["--browser", "edge"]), { browser: "edge" });
+  assert.deepEqual(browsers.parseStartupArgs(["--browser", "edge"]), { browser: ["edge"] });
   assert.deepEqual(browsers.parseStartupArgs(["--browser=Chrome-Canary", "--profile=Profile 2"]), {
-    browser: "chrome-canary",
+    browser: ["chrome-canary"],
     profile: "Profile 2",
   });
   assert.deepEqual(browsers.parseStartupArgs(["--profile", "Work"]), { profile: "Work" });
@@ -76,9 +76,9 @@ test("parseStartupArgs: --browser and --profile, spaced or with =, browser case 
 test("parseStartupArgs: an unknown browser, flag or stray argument is an error", () => {
   assert.throws(
     () => browsers.parseStartupArgs(["--browser", "netscape"]),
-    /--browser is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, librewolf, waterfox, zen, floorp, tor-browser, safari\./,
+    /--browser is "netscape"; use default, all, or one or more of these, separated by commas: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, librewolf, waterfox, zen, floorp, tor-browser, safari\./,
   );
-  assert.throws(() => browsers.parseStartupArgs(["--browser="]), /--browser is ""; use one of/);
+  assert.throws(() => browsers.parseStartupArgs(["--browser="]), /--browser is ""; use default, all, or one or more/);
   assert.throws(() => browsers.parseStartupArgs(["--browsers", "edge"]), /Unknown option '--browsers'/);
   assert.throws(() => browsers.parseStartupArgs(["edge"]), /edge/);
   assert.throws(() => browsers.parseStartupArgs(["--browser"]), /--browser/);
@@ -90,12 +90,12 @@ test("parseStartupArgs: an unknown browser, flag or stray argument is an error",
 
 test("--browser wins over MNEMOS_BOOKMARKS_BROWSER", () => {
   const env = { ...homeEnv(), MNEMOS_BOOKMARKS_BROWSER: "brave" };
-  assert.equal(browsers.selectedBrowser(env, {}), "brave");
-  assert.equal(browsers.selectedBrowser(env, { browser: "edge" }), "edge");
+  assert.deepEqual(browsers.selectedBrowsers(env, {}), ["brave"]);
+  assert.deepEqual(browsers.selectedBrowsers(env, { browser: ["edge"] }), ["edge"]);
   // A flag also overrides an invalid variable, which is then never read.
-  assert.equal(browsers.selectedBrowser({ MNEMOS_BOOKMARKS_BROWSER: "netscape" }, { browser: "opera" }), "opera");
+  assert.deepEqual(browsers.selectedBrowsers({ MNEMOS_BOOKMARKS_BROWSER: "netscape" }, { browser: ["opera"] }), ["opera"]);
   assert.equal(
-    lib.bookmarksPath(env, process.platform, { browser: "edge" }),
+    lib.bookmarksPath(env, process.platform, { browser: ["edge"] }),
     path.join(browsers.chromiumBase("edge"), "Default", "Bookmarks"),
   );
 });
@@ -103,7 +103,7 @@ test("--browser wins over MNEMOS_BOOKMARKS_BROWSER", () => {
 test("--profile wins over MNEMOS_PROFILE, which wins over CHROME_PROFILE", () => {
   const base = browsers.chromiumBase("chrome");
   const at = (profile) => path.join(base, profile, "Bookmarks");
-  const env = { ...homeEnv(), CHROME_PROFILE: "Old" };
+  const env = { ...homeEnv(), MNEMOS_BOOKMARKS_BROWSER: "chrome", CHROME_PROFILE: "Old" };
   assert.equal(lib.bookmarksPath(env, process.platform, {}), at("Old"));
   env.MNEMOS_PROFILE = "New";
   assert.equal(lib.bookmarksPath(env, process.platform, {}), at("New"));
@@ -115,7 +115,7 @@ test("--profile wins over MNEMOS_PROFILE, which wins over CHROME_PROFILE", () =>
 });
 
 test("MNEMOS_BOOKMARKS_PATH wins over CHROME_BOOKMARKS_PATH; either wins over the flags", () => {
-  const options = { browser: "edge", profile: "Work" };
+  const options = { browser: ["edge"], profile: "Work" };
   assert.equal(lib.bookmarksPath({ CHROME_BOOKMARKS_PATH: "/old/Bookmarks" }, "linux", options), "/old/Bookmarks");
   assert.equal(
     lib.bookmarksPath({ CHROME_BOOKMARKS_PATH: "/old/Bookmarks", MNEMOS_BOOKMARKS_PATH: "/new/Bookmarks" }, "linux", options),
@@ -135,7 +135,7 @@ test("--profile picks a Firefox profile by name", () => {
       "[Profile1]\nName=work\nIsRelative=1\nPath=Profiles/b.work\n",
   );
   process.env.CHROME_PROFILE = "default";
-  browsers.setStartupOptions({ browser: "firefox", profile: "work" });
+  browsers.setStartupOptions({ browser: ["firefox"], profile: "work" });
   assert.equal(lib.bookmarksPath(), path.join(base, "Profiles", "b.work", "places.sqlite"));
 });
 
@@ -144,7 +144,7 @@ test("setStartupOptions: later lookups use the flags; a missing profile lists th
   write(path.join(browsers.chromiumBase("brave"), "Default", "Bookmarks"), chromiumFile("brave page"));
   process.env.MNEMOS_BOOKMARKS_BROWSER = "brave";
   assert.deepEqual(lib.recentBookmarks().bookmarks.map((b) => b.title), ["brave page"]);
-  browsers.setStartupOptions({ browser: "edge" });
+  browsers.setStartupOptions({ browser: ["edge"] });
   assert.throws(
     () => lib.listFolders(),
     (err) => {
@@ -154,7 +154,7 @@ test("setStartupOptions: later lookups use the flags; a missing profile lists th
       return true;
     },
   );
-  browsers.setStartupOptions({ browser: "edge", profile: "Profile 4" });
+  browsers.setStartupOptions({ browser: ["edge"], profile: "Profile 4" });
   assert.deepEqual(lib.recentBookmarks().bookmarks.map((b) => b.title), ["edge page"]);
 });
 
@@ -207,5 +207,5 @@ test("e2e flags: an unknown --browser stops the server at startup, naming the ch
     timeout: 30_000,
   });
   assert.equal(run.status, 2, run.stderr);
-  assert.match(run.stderr, /mnemos: --browser is "netscape"; use one of: chrome, /);
+  assert.match(run.stderr, /mnemos: --browser is "netscape"; use default, all, or one or more of these, separated by commas: chrome, /);
 });
