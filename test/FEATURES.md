@@ -80,6 +80,9 @@ root entry and that matrix in step.
   matches the default limit returns 100 and `limit: 500` returns 200; `c++` and `(2024)` match
   literally; results come back in document order (pre-order, across roots). `test/server.test.js`
   (e2e): one call by query, one with `limit: 1`.
+  `test/null-children.test.js` (unit and e2e): null, string and number entries in `children`
+  arrays are skipped by the tree walk, so every keyword tool, and all six tools over MCP
+  (`semantic_search`'s title index included), answer without them (GitHub #2).
 - **Untested**: the `folder` argument over the wire.
 - **Tickets**: mnemos-2gg.11 (the `folder` argument over the wire)
 

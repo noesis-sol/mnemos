@@ -276,10 +276,13 @@ function* walk(root: BookmarkNode, rootPath: string): Generator<Visit> {
       continue;
     }
     yield { kind: "folder", folder };
-    const children = node.children ?? [];
+    const children = Array.isArray(node.children) ? node.children : [];
     // Pushed in reverse so siblings pop in document order.
     for (let i = children.length - 1; i >= 0; i--) {
       const child = children[i];
+      // A hand-edited or third-party file can hold null (or a bare string) in
+      // a children array: skip it rather than fail the whole tool call.
+      if (!isRecord(child)) continue;
       if (isUrlNode(child)) {
         stack.push({ node: child, folder });
       } else if (isFolderNode(child) && !isTrash(child)) {
