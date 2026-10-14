@@ -74,16 +74,18 @@ async function plainFetch(url) {
 }
 
 /**
- * A renderer that answers after `delayMs(url)`, counting launches and closes,
- * and noting a close that came while a page was still in the browser.
+ * A renderer that answers once `hold(url)` resolves (by default after 20 ms),
+ * counting launches and closes, and noting a close that came while a page was
+ * still in the browser.
  */
-function fakeRenderer(delayMs = () => 20) {
+function fakeRenderer(hold = () => sleep(20)) {
   const renderer = {
     launches: 0,
     closes: 0,
     running: false,
     inBrowser: 0,
     closedUnderPage: false,
+    started: [],
     rendered: [],
     async launch() {
       if (!renderer.running) renderer.launches++;
@@ -93,7 +95,8 @@ function fakeRenderer(delayMs = () => 20) {
     async render(url) {
       assert.ok(renderer.running, "render after launch");
       renderer.inBrowser++;
-      await sleep(delayMs(url));
+      renderer.started.push(url);
+      await hold(url);
       renderer.inBrowser--;
       renderer.rendered.push(url);
       return html(url, article(`rendered ${new URL(url).hostname}`));
@@ -154,9 +157,18 @@ test("Fetchers of two sources share one browser, closed once neither has a page 
   const quick = entries(["https://quick.example/shell", "https://quick.example/article"]);
   const slow = entries(["https://slow.example/shell", "https://slow.example/article"]);
   const indexes = [seededIndex(quick), seededIndex(slow)];
-  // The slow source's page is still in the browser when the quick one's fetcher has none left.
-  const fake = fakeRenderer((url) => (url.includes("slow") ? 400 : 20));
-  const shared = new SharedRenderer(fake);
+  // The slow source's page is in the browser before the quick one's page leaves it, and still
+  // there when the quick one's fetcher, with no page left, lets go of the browser. The fetchers
+  // start independently, so the renderer holds each page until the other source's has got there:
+  // without that, on a loaded machine the slow source could reach the browser only after the quick
+  // one closed it, and rightly launch it again.
+  let shared;
+  const fake = fakeRenderer((url) =>
+    url.includes("slow")
+      ? until(() => fake.rendered.some((done) => done.includes("quick")) && shared.users === 1, "the quick source to let go")
+      : until(() => fake.started.some((started) => started.includes("slow")), "the slow source's page"),
+  );
+  shared = new SharedRenderer(fake);
   const pool = new FetchPool({ domainGapMs: 10 });
   const fetchers = [quick, slow].map(
     (list, i) =>
