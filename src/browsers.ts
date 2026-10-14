@@ -404,7 +404,7 @@ export interface FirefoxProfile {
 }
 
 /** The sections of an INI file, in file order; empty when it cannot be read. */
-function readIni(file: string): { name: string; keys: Record<string, string> }[] {
+export function readIni(file: string): { name: string; keys: Record<string, string> }[] {
   let ini: string;
   try {
     ini = fs.readFileSync(file, "utf-8");
@@ -753,9 +753,9 @@ function addRoot(roots: Record<string, BookmarkNode>, label: string, node: Bookm
 // Discovery
 // ---------------------------------------------------------------------------
 
-/** Browsers other than `except` that have bookmarks on this machine. */
+/** Browsers other than `except` (every browser when it is undefined) that have bookmarks on this machine. */
 export function browsersWithBookmarks(
-  except: Browser,
+  except: Browser | undefined,
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): Browser[] {

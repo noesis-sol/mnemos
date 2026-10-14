@@ -246,6 +246,28 @@ root entry and that matrix in step.
   Linux; Opera, Chrome's channels and the Snap and Flatpak directories against real installs.
 - **Tickets**: mnemos-xp1; mnemos-5ij.1
 
+## System default browser
+
+- **Reached by**: `src/default-browser.ts`: `defaultBrowser` (detected once per process),
+  `resolveDefaultBrowser`, `detectDefaultBrowserId`, `identifyBrowser` and the tables mapping
+  macOS bundle ids, Windows ProgIds and Linux `.desktop` names to browser ids. Not yet reachable
+  from a tool or flag: `--browser default` (mnemos-5ij.5) will use it.
+- **Tests**: `test/default-browser.test.js` (unit, each command's output injected, files in a
+  temp home): every table value a browser id, every browser reachable per platform, no key both
+  supported and unsupported; bundle ids in any case, ProgIds with an install's suffix, Snap and
+  Flatpak `.desktop` names, known-unsupported (Arc, Orion, Opera GX, LibreWolf) and unknown
+  names. macOS: `osascript`'s answer, else the https handler in LaunchServices' preferences
+  (plist fixtures from `test/fixtures/default-browser/make-launchservices.py`), Safari when it
+  has none or there is no file, a failure when the file is unreadable. Windows: `UserChoiceLatest`
+  over `UserChoice`, a ProgId with spaces, no key or value a failure. Linux: `xdg-settings`, else
+  `x-scheme-handler/https` from `mimeapps.list` in the spec's order (desktop-specific files first,
+  a file without the key passed over). Detection failing reads the first browser with bookmarks
+  with a warning, or errors when there is none; an unsupported or unknown default browser errors
+  naming it and `--browser <id>`; the result, or the error, is detected once.
+- **Untested**: the real `osascript`, `reg` and `xdg-settings` commands (`osascript` checked by
+  hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11.
+- **Tickets**: mnemos-5ij.3
+
 ## Page fetch policy and safe fetch
 
 - **Reached by**: the background page fetcher (`src/fetcher.ts`, see Background page fetching);
