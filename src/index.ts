@@ -54,7 +54,6 @@ import { Indexer } from "./indexer.js";
 import { Fetcher } from "./fetcher.js";
 import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
 import { SourceIndexes } from "./source-indexes.js";
-import { selectSources } from "./sources.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -292,7 +291,8 @@ async function main(): Promise<void> {
   await server.connect(new StdioServerTransport());
   // After connect, and on a later tick: the handshake never waits for finding
   // the default browser or for indexing.
-  setImmediate(() => indexes.start(() => selectSources().sources));
+  // Only sources that can be read: a listed browser with no bookmarks gets no index.
+  setImmediate(() => indexes.start(() => lib.readBookmarks().read.map((r) => r.source)));
 }
 
 main().catch((e) => {

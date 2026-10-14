@@ -82,10 +82,10 @@ test("the forks are browser ids read with the Firefox reader", () => {
     assert.ok(browsers.BROWSERS.includes(fork), fork);
     assert.ok(browsers.isFirefox(fork), fork);
     assert.ok(!browsers.isChromium(fork), fork);
-    assert.equal(browsers.selectedBrowser({}, { browser: fork }), fork);
-    assert.deepEqual(browsers.parseStartupArgs(["--browser", fork]), { browser: fork });
+    assert.deepEqual(browsers.selectedBrowsers({}, { browser: [fork] }), [fork]);
+    assert.deepEqual(browsers.parseStartupArgs(["--browser", fork]), { browser: [fork] });
   }
-  assert.equal(browsers.selectedBrowser({ MNEMOS_BOOKMARKS_BROWSER: " LibreWolf " }), "librewolf");
+  assert.deepEqual(browsers.selectedBrowsers({ MNEMOS_BOOKMARKS_BROWSER: " LibreWolf " }, {}), ["librewolf"]);
   assert.equal(browsers.BROWSER_NAMES["tor-browser"], "Tor Browser");
   assert.ok(browsers.isFirefox("firefox"));
   assert.ok(!browsers.isFirefox("chrome") && !browsers.isFirefox("safari"));
