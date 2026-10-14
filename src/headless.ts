@@ -530,3 +530,43 @@ export class HeadlessBrowser implements PageRenderer {
     }
   }
 }
+
+/**
+ * One renderer shared by several fetchers (one per selected bookmarks file),
+ * so they run one browser between them, not one each. Each fetcher gets its
+ * own user(): launching or rendering through it counts it in, closing it
+ * counts it out, and the browser is closed only when no user is left.
+ */
+export class SharedRenderer {
+  private readonly renderer: PageRenderer;
+  /** Users that launched the browser and have not closed it since. */
+  private readonly using = new Set<object>();
+
+  constructor(renderer: PageRenderer) {
+    this.renderer = renderer;
+  }
+
+  /** Users with the browser in use now; for tests. */
+  get users(): number {
+    return this.using.size;
+  }
+
+  /** A PageRenderer for one fetcher: its close() closes the browser only if no other user has it open. */
+  user(): PageRenderer {
+    const key = {};
+    return {
+      launch: () => {
+        this.using.add(key);
+        return this.renderer.launch();
+      },
+      render: (url, options) => {
+        this.using.add(key);
+        return this.renderer.render(url, options);
+      },
+      close: async () => {
+        if (!this.using.delete(key) || this.using.size > 0) return;
+        await this.renderer.close();
+      },
+    };
+  }
+}

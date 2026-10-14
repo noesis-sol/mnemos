@@ -53,6 +53,7 @@ import { ICONS } from "./icon.js";
 import { createEmbedder } from "./embedder.js";
 import { Indexer } from "./indexer.js";
 import { FetchPool, Fetcher } from "./fetcher.js";
+import { HeadlessBrowser, SharedRenderer } from "./headless.js";
 import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
 import { SourceIndexes } from "./source-indexes.js";
 
@@ -91,13 +92,21 @@ const embedder = createEmbedder();
  * fetcher lease; the indexer then chunks and embeds what it stored. The
  * fetchers share one pool: its fetches at once and per-domain gaps hold over
  * every source, and a page one fetched lately is not fetched again by another.
+ * They share one headless browser too, closed once none of them needs it.
  */
 const fetchPool = new FetchPool();
+const pageRenderer = new SharedRenderer(new HeadlessBrowser());
 const indexes = new SourceIndexes((source) => {
   const bookmarksFile = () => source.bookmarks;
   const entries = () => lib.sourceBookmarks(source);
   const indexer = new Indexer({ embedder, bookmarksFile, entries });
-  const fetcher = new Fetcher({ bookmarksFile, entries, pool: fetchPool, onPage: () => indexer.pagesChanged() });
+  const fetcher = new Fetcher({
+    bookmarksFile,
+    entries,
+    pool: fetchPool,
+    renderer: pageRenderer.user(),
+    onPage: () => indexer.pagesChanged(),
+  });
   return { indexer, fetcher };
 });
 

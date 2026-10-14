@@ -34,8 +34,9 @@
  * A page that comes back with no readable text (a JavaScript shell) is marked
  * needs_browser and loaded again in a headless browser (headless.ts), at most
  * BROWSER_PAGES at a time, under the same per-domain rules. The browser is
- * launched on the first such page and closed once none is left. With no
- * browser or no playwright-core, those pages stay needs_browser and
+ * launched on the first such page and closed once none is left; the fetchers
+ * of every source share one (SharedRenderer), closed once none of them has a
+ * page left for it. With no browser or no playwright-core, those pages stay needs_browser and
  * browserNote() says so.
  *
  * A bookmarked PDF is fetched as bytes and its text read with pdf.js (pdf.ts),
@@ -385,7 +386,10 @@ export interface FetcherOptions {
    */
   pool?: FetchPool;
   concurrency?: number;
-  /** Renders pages that need a browser; defaults to a HeadlessBrowser on `env`. */
+  /**
+   * Renders pages that need a browser; defaults to a HeadlessBrowser on `env`.
+   * A SharedRenderer's user() to share one browser with the other fetchers.
+   */
   renderer?: PageRenderer;
   /** Pages in the browser at once; defaults to BROWSER_PAGES. */
   browserPages?: number;
