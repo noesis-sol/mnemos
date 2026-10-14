@@ -88,7 +88,7 @@ test("a missing profile's error lists the profiles with a Bookmarks file, sorted
           err.message,
         );
         assert.ok(!err.message.includes("Guest Profile"), err.message);
-        assert.ok(err.message.includes("Set CHROME_PROFILE"), err.message);
+        assert.ok(err.message.includes("--profile or MNEMOS_PROFILE"), err.message);
         return true;
       },
     );

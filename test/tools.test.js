@@ -304,7 +304,7 @@ test("deeply nested folders do not overflow the stack", () => {
 
 test("missing bookmarks file: friendly error, not ENOENT", () => {
   process.env.CHROME_BOOKMARKS_PATH = path.join(os.tmpdir(), "mnemos-does-not-exist", "Bookmarks");
-  assert.throws(() => lib.listFolders(), /No bookmarks file at .*Set CHROME_PROFILE/s);
+  assert.throws(() => lib.listFolders(), /No bookmarks file at .*--profile or MNEMOS_PROFILE/s);
 });
 
 test("malformed JSON: friendly mid-write error", () => {

@@ -138,7 +138,9 @@ root entry and that matrix in step.
 
 ## Configuration and profile resolution
 
-- **Reached by**: environment variables `CHROME_PROFILE` and `CHROME_BOOKMARKS_PATH`; the platform
+- **Reached by**: the startup flags `--browser` and `--profile` (`browsers.parseStartupArgs`,
+  `browsers.setStartupOptions`); environment variables `MNEMOS_PROFILE` (alias `CHROME_PROFILE`)
+  and `MNEMOS_BOOKMARKS_PATH` (alias `CHROME_BOOKMARKS_PATH`); the platform
   default Chrome directory (`HOME`, `LOCALAPPDATA`, `XDG_CONFIG_HOME`); `lib.chromeBase`,
   `lib.bookmarksPath`, `lib.loadRoots`.
 - **Tests**: `test/lib.test.js` (unit): `chromeBase` per platform, `LOCALAPPDATA` and
@@ -182,12 +184,18 @@ root entry and that matrix in step.
   and reopen). Two processes sharing the lease are driven by `test/page-fetcher.test.js` (two
   servers on one cache: only one fetches, each page once); a lease lapsing while its holder
   still runs is not (see Background page fetching).
-- **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once)
+  `test/browser-flags.test.js` (unit and e2e): flag parsing (spaced and `=` forms, unknown
+  browser, flag or positional); `--browser` over `MNEMOS_BOOKMARKS_BROWSER`, `--profile` over
+  `MNEMOS_PROFILE` over `CHROME_PROFILE`, `MNEMOS_BOOKMARKS_PATH` over `CHROME_BOOKMARKS_PATH`
+  over the flags; a Firefox profile by flag; the missing-profile error listing the flag's
+  browser's profiles; the built server reading the flags' browser and profile over the
+  environment, and exiting with status 2 on an unknown `--browser`.
+- **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once); mnemos-5ij.1
 
 ## Other browsers and descriptions
 
-- **Reached by**: `MNEMOS_BOOKMARKS_BROWSER` (`chrome`, `chromium`, `edge`, `brave`, `vivaldi`,
-  `firefox`, `safari`); `CHROME_PROFILE` (for Firefox, a profile name from `profiles.ini`);
+- **Reached by**: `--browser` / `MNEMOS_BOOKMARKS_BROWSER` (`chrome`, `chrome-beta`, `chrome-dev`,
+  `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `safari`); `CHROME_PROFILE` (for Firefox, a profile name from `profiles.ini`);
   `CHROME_BOOKMARKS_PATH` pointing at any supported file, its format read from its first bytes;
   `src/browsers.ts` (paths, Firefox's `places.sqlite` through `node:sqlite` on a temporary copy,
   Safari's `Bookmarks.plist`), `src/plist.ts` (binary plist reader), `lib.loadRoots`,
@@ -214,12 +222,16 @@ root entry and that matrix in step.
   data, integers, real and boolean; hand-built files for integer widths, UIDs, long strings,
   shared objects, cycles, nesting past the limit and malformed files.
   `test/browsers-server.test.js` (e2e): a Safari plist searched over MCP with its description;
-  an unknown browser is `isError`.
+  an unknown browser is `isError`. `test/chromium-registry.test.js` (unit): Chrome Beta, Dev,
+  Canary and Opera directories per platform (Opera under the roaming `APPDATA`), each reading its
+  profile's file; Opera's root-level `Bookmarks` as the `Default` profile unless `Default/` has
+  one, listed in the missing-profile error; Linux Snap and Flatpak directories chosen by their
+  `Local State`; existing Chrome configurations unchanged.
 - **Untested**: real browsers' files (checked by hand on macOS against Chrome, Firefox and
   Safari libraries on 2026-10-13); the "needs Node 22.13" error on older Node; Vivaldi's Trash
   marker (`meta_info.Trash`) against a real Vivaldi file; Edge, Brave and Vivaldi on Windows and
-  Linux.
-- **Tickets**: mnemos-xp1
+  Linux; Opera, Chrome's channels and the Snap and Flatpak directories against real installs.
+- **Tickets**: mnemos-xp1; mnemos-5ij.1
 
 ## Page fetch policy and safe fetch
 

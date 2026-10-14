@@ -1,21 +1,25 @@
 /**
  * mnemos core logic — everything except MCP wiring, so it is unit-testable
  * without spawning a server. All functions that touch the filesystem resolve
- * paths through the CHROME_BOOKMARKS_PATH / CHROME_PROFILE /
- * MNEMOS_BOOKMARKS_BROWSER environment variables, which is also how tests
- * inject fixtures. Where each browser keeps its bookmarks, and the readers for
+ * paths through the --browser / --profile startup flags and the
+ * MNEMOS_BOOKMARKS_PATH / MNEMOS_PROFILE / MNEMOS_BOOKMARKS_BROWSER environment
+ * variables (CHROME_BOOKMARKS_PATH and CHROME_PROFILE are older aliases), which
+ * is also how tests inject fixtures. Where each browser keeps its bookmarks, and the readers for
  * Firefox's and Safari's formats, live in browsers.ts.
  */
 
 import fs from "node:fs";
-import path from "node:path";
 import { domainToUnicode } from "node:url";
 import {
   BROWSER_ENV,
   BROWSER_NAMES,
+  PATH_ENV,
+  PROFILE_ENV,
+  bookmarksPathOverride,
   browsersWithBookmarks,
   chromiumBase,
-  chromiumProfilesWithBookmarks,
+  chromiumBookmarksPath,
+  chromiumProfiles,
   firefoxBase,
   firefoxPlacesPath,
   firefoxProfilesWithBookmarks,
@@ -25,7 +29,9 @@ import {
   readSafariRoots,
   safariBookmarksPath,
   selectedBrowser,
+  selectedProfile,
   type Browser,
+  type StartupOptions,
 } from "./browsers.js";
 import { isBinaryPlist } from "./plist.js";
 
@@ -59,21 +65,24 @@ export function chromeBase(
 }
 
 /**
- * The bookmarks file to read: CHROME_BOOKMARKS_PATH if set, else the file of
- * the browser MNEMOS_BOOKMARKS_BROWSER names (Chrome by default), in the
- * profile CHROME_PROFILE names.
+ * The bookmarks file to read: MNEMOS_BOOKMARKS_PATH (or CHROME_BOOKMARKS_PATH)
+ * if set, else the file of the browser --browser or MNEMOS_BOOKMARKS_BROWSER
+ * names (Chrome by default), in the profile --profile, MNEMOS_PROFILE or
+ * CHROME_PROFILE names (the browser's default when none is set). `options`
+ * defaults to the startup flags.
  */
 export function bookmarksPath(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
+  options?: StartupOptions,
 ): string {
-  const override = env.CHROME_BOOKMARKS_PATH;
+  const override = bookmarksPathOverride(env);
   if (override) return override;
-  const browser = selectedBrowser(env);
-  if (browser === "firefox") return firefoxPlacesPath(env, platform);
+  const browser = selectedBrowser(env, options);
+  const profile = selectedProfile(env, options);
+  if (browser === "firefox") return firefoxPlacesPath(profile, platform, env);
   if (browser === "safari") return safariBookmarksPath();
-  const profile = env.CHROME_PROFILE || "Default"; // empty string → Default
-  return path.join(chromiumBase(browser, platform, env), profile, "Bookmarks");
+  return chromiumBookmarksPath(browser, profile, platform, env);
 }
 
 /** The first 16 bytes of a file: enough to tell SQLite and plist files from JSON. */
@@ -113,32 +122,32 @@ function unreadable(browser: Browser, file: string, error: unknown): Error {
   } else if (browser === "safari" && process.platform !== "darwin") {
     message = `No bookmarks file at ${file}: Safari keeps its bookmarks only on macOS.`;
   } else if (browser === "safari") {
-    message = `No bookmarks file at ${file}. Set CHROME_BOOKMARKS_PATH to a Safari Bookmarks.plist.`;
+    message = `No bookmarks file at ${file}. Set ${PATH_ENV} to a Safari Bookmarks.plist.`;
   } else if (browser === "firefox") {
     const available = firefoxProfilesWithBookmarks(firefoxBase());
     message =
       `No bookmarks file at ${file}. ` +
       `Firefox profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
-      "Set CHROME_PROFILE (Firefox profile name) or CHROME_BOOKMARKS_PATH.";
+      `Choose one with --profile or ${PROFILE_ENV} (Firefox profile name), or set ${PATH_ENV}.`;
   } else {
-    const available = chromiumProfilesWithBookmarks(chromiumBase(browser));
+    const available = chromiumProfiles(browser);
     message =
       `No bookmarks file at ${file}. ` +
       `${BROWSER_NAMES[browser]} profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
-      "Set CHROME_PROFILE (profile directory name) or CHROME_BOOKMARKS_PATH.";
+      `Choose one with --profile or ${PROFILE_ENV} (profile directory name), or set ${PATH_ENV}.`;
   }
   const others = browsersWithBookmarks(browser);
   if (others.length > 0) {
     message +=
       ` Other browsers with bookmarks here: ${others.map((b) => BROWSER_NAMES[b]).join(", ")}` +
-      ` (set ${BROWSER_ENV} to ${others.join(", ")}).`;
+      ` (choose one with --browser or ${BROWSER_ENV}: ${others.join(", ")}).`;
   }
   return new Error(message);
 }
 
 /**
  * The root folders of the bookmarks file, keyed by root name. The file's
- * format is read from its first bytes, so CHROME_BOOKMARKS_PATH can point at
+ * format is read from its first bytes, so MNEMOS_BOOKMARKS_PATH can point at
  * any supported browser's file: Chromium JSON, Firefox's places.sqlite or
  * Safari's binary Bookmarks.plist.
  */
@@ -165,7 +174,7 @@ export function loadRoots(): Record<string, BookmarkNode> {
         "binary form; convert an XML copy with `plutil -convert binary1 <file>`.",
     );
   }
-  // Chromium JSON. A bookmarks file read through CHROME_BOOKMARKS_PATH is
+  // Chromium JSON. A bookmarks file read through MNEMOS_BOOKMARKS_PATH is
   // named after the selected browser, which is Chrome unless set otherwise.
   const name = isChromium(browser) ? BROWSER_NAMES[browser] : "The browser";
   let parsed: unknown;
@@ -179,7 +188,7 @@ export function loadRoots(): Record<string, BookmarkNode> {
         `${name} may be mid-write; retry in a moment.`,
     );
   }
-  // Valid JSON is not enough: pointing CHROME_BOOKMARKS_PATH at the wrong file
+  // Valid JSON is not enough: pointing MNEMOS_BOOKMARKS_PATH at the wrong file
   // must not look like "this user has no bookmarks". A real Chrome file always
   // has roots.{bookmark_bar,other,synced}, each a folder node with a children
   // array — even on a brand-new profile — so requiring one such node
@@ -190,9 +199,9 @@ export function loadRoots(): Record<string, BookmarkNode> {
   if (!looksLikeChrome) {
     throw new Error(
       `File at ${file} is not a Chrome Bookmarks file: no "roots" object containing ` +
-        "bookmark folders. Point CHROME_BOOKMARKS_PATH at a Chromium browser's 'Bookmarks' " +
-        "file (no extension), Firefox's places.sqlite or Safari's Bookmarks.plist, or set " +
-        "CHROME_PROFILE instead.",
+        `bookmark folders. Point ${PATH_ENV} at a Chromium browser's 'Bookmarks' ` +
+        "file (no extension), Firefox's places.sqlite or Safari's Bookmarks.plist, or choose " +
+        `a profile with --profile or ${PROFILE_ENV} instead.`,
     );
   }
   return roots as Record<string, BookmarkNode>;
@@ -227,7 +236,7 @@ export function chromeTimeToIso(value: string | undefined, now: number = Date.no
   return `${y}-${m}-${d}`;
 }
 
-// Chrome writes `type` on every node, but CHROME_BOOKMARKS_PATH accepts any
+// Chrome writes `type` on every node, but MNEMOS_BOOKMARKS_PATH accepts any
 // file, and hand-made or third-party exports sometimes omit it. Falling back
 // to the node's shape means a missing `type` can never silently drop a whole
 // subtree of the user's bookmarks.

@@ -67,7 +67,7 @@ test("MNEMOS_BOOKMARKS_BROWSER: an unknown browser is an error naming the choice
   process.env.MNEMOS_BOOKMARKS_BROWSER = "netscape";
   assert.throws(
     () => lib.listFolders(),
-    /MNEMOS_BOOKMARKS_BROWSER is "netscape"; use one of: chrome, chromium, edge, brave, vivaldi, firefox, safari\./,
+    /MNEMOS_BOOKMARKS_BROWSER is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, safari\./,
   );
 });
 
@@ -123,7 +123,7 @@ test("a missing profile names the browser's profiles and the other browsers with
       assert.match(err.message, /Brave profiles that have bookmarks: Profile 1\./);
       assert.match(
         err.message,
-        /Other browsers with bookmarks here: Edge \(set MNEMOS_BOOKMARKS_BROWSER to edge\)\./,
+        /Other browsers with bookmarks here: Edge \(choose one with --browser or MNEMOS_BOOKMARKS_BROWSER: edge\)\./,
       );
       return true;
     },

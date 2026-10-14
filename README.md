@@ -6,7 +6,7 @@
 
 *mnemos* (from the Greek **μνήμη** — memory) is a local
 [MCP](https://modelcontextprotocol.io) server that gives AI assistants access to your
-browser bookmarks (Chrome, Edge, Brave, Vivaldi, Chromium, Firefox or Safari) — not as a pile of links, but as a curated signal of what you
+browser bookmarks (Chrome, Edge, Brave, Vivaldi, Opera, Chromium, Firefox or Safari) — not as a pile of links, but as a curated signal of what you
 consider important, which sources you trust, and which opinions you endorse.
 It finds them by keyword, or by meaning: a local embedding model searches their
 titles and the text of the pages they point to, in any language.
@@ -147,11 +147,22 @@ skip the install (for instance where npm cannot reach the registry);
 
 ## Configuration
 
+Two startup flags choose the bookmarks to read; each wins over its environment
+variable:
+
+| Flag | Environment variable | Default | Purpose |
+|------|----------------------|---------|---------|
+| `--browser <id>` | `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox` or `safari` |
+| `--profile <name>` | `MNEMOS_PROFILE` | `Default` | Profile directory name (e.g. `Profile 3`); for Firefox, the profile's name (default: the one Firefox opens). `CHROME_PROFILE` is an older name for the variable |
+
+For example, `claude mcp add --scope user mnemos -- npx -y mnemos-mcp --browser firefox`,
+or in Claude Desktop's config, `"args": ["-y", "mnemos-mcp", "--browser", "edge", "--profile", "Profile 1"]`.
+An unknown flag or browser stops mnemos at startup, with a message in your MCP
+client's log.
+
 | Environment variable | Default | Purpose |
 |----------------------|---------|---------|
-| `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chromium`, `edge`, `brave`, `vivaldi`, `firefox` or `safari` |
-| `CHROME_PROFILE` | `Default` | Profile directory name (e.g. `Profile 3`); for Firefox, the profile's name (default: the one Firefox opens) |
-| `CHROME_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the two above |
+| `MNEMOS_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the browser and profile. `CHROME_BOOKMARKS_PATH` is an older name for it |
 | `MNEMOS_CACHE_DIR` | your OS cache directory | Where mnemos keeps its index, model and embedding runtime (see [Cache](#cache)) |
 | `MNEMOS_INSTALL_RUNTIME` | — | `0` keeps mnemos from installing its embedding runtime on first start; `semantic_search` then matches keywords only |
 | `MNEMOS_FETCH_PAGES` | — | `0` turns off fetching bookmarked pages; `semantic_search` then uses titles only |
@@ -160,7 +171,7 @@ skip the install (for instance where npm cannot reach the registry);
 | `MNEMOS_FETCH_ALLOW_HOSTS` | — | Comma-separated `host` or `host:port` exempt from the private-address block, e.g. an intranet wiki |
 | `MNEMOS_BROWSER` | an installed Chrome, Edge, Chromium or Brave | Path to a Chromium-based browser for pages that need JavaScript; `0` turns this off |
 
-For example, `claude mcp add --scope user mnemos -e MNEMOS_BOOKMARKS_BROWSER=firefox -- npx -y mnemos-mcp`.
+Environment variables are set with `-e`, e.g. `claude mcp add --scope user mnemos -e MNEMOS_FETCH_PAGES=0 -- npx -y mnemos-mcp`.
 
 > Chrome profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
 > `%LOCALAPPDATA%\Google\Chrome\User Data` (Windows), and
@@ -173,10 +184,21 @@ For example, `claude mcp add --scope user mnemos -e MNEMOS_BOOKMARKS_BROWSER=fir
 | Edge | `~/Library/Application Support/Microsoft Edge` | `%LOCALAPPDATA%\Microsoft\Edge\User Data` | `~/.config/microsoft-edge` |
 | Brave | `~/Library/Application Support/BraveSoftware/Brave-Browser` | `%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data` | `~/.config/BraveSoftware/Brave-Browser` |
 | Vivaldi | `~/Library/Application Support/Vivaldi` | `%LOCALAPPDATA%\Vivaldi\User Data` | `~/.config/vivaldi` |
+| Opera | `~/Library/Application Support/com.operasoftware.Opera` | `%APPDATA%\Opera Software\Opera Stable` | `~/.config/opera` |
 | Chromium | `~/Library/Application Support/Chromium` | `%LOCALAPPDATA%\Chromium\User Data` | `~/.config/chromium` |
+| Chrome Beta, Dev, Canary | `~/Library/Application Support/Google/Chrome Beta` (`Chrome Dev`, `Chrome Canary`) | `%LOCALAPPDATA%\Google\Chrome Beta\User Data` (`Chrome Dev`, `Chrome SxS`) | `~/.config/google-chrome-beta` (`google-chrome-unstable`, `google-chrome-canary`) |
 | Firefox | `~/Library/Application Support/Firefox` | `%APPDATA%\Mozilla\Firefox` | `~/.mozilla/firefox`, `~/.config/mozilla/firefox`, Snap or Flatpak |
 | Safari | `~/Library/Safari/Bookmarks.plist` | — | — |
 
+> **Linux**: a browser installed as a Flatpak keeps the same directory below
+> `~/.var/app/<app id>/config` (e.g. `~/.var/app/org.chromium.Chromium/config/chromium`),
+> and the Chromium and Brave Snaps below `~/snap` (`~/snap/chromium/common/chromium`,
+> `~/snap/brave/current/.config/BraveSoftware/Brave-Browser`). mnemos reads the
+> first of these that the browser has used.
+>
+> **Opera**: older versions keep `Bookmarks` in the directory above, not in
+> `Default/`; mnemos reads it as the `Default` profile.
+>
 > **Node 22.13** is the floor: mnemos keeps its index with `node:sqlite`, and
 > reads Firefox's `places.sqlite` with it too. Firefox profiles are those
 > listed in `profiles.ini`.
@@ -185,8 +207,9 @@ For example, `claude mcp add --scope user mnemos -e MNEMOS_BOOKMARKS_BROWSER=fir
 > bookmarks. Add the app that runs mnemos — your terminal for Claude Code, or
 > Claude Desktop — in System Settings › Privacy & Security › Full Disk Access.
 
-If the profile has no bookmarks file, mnemos tells the assistant which profiles
-do — no cryptic tracebacks.
+If the profile has no bookmarks file, mnemos tells the assistant which of the
+browser's profiles do, and which other browsers have bookmarks — no cryptic
+tracebacks.
 
 ### Cache
 
@@ -344,7 +367,7 @@ to main and pull request (on all three weekly).
 ---
 
 <div align="center">
-<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Chrome, Edge, Brave, Vivaldi, Chromium and Firefox on macOS, Windows, and Linux, and with Safari on macOS.</sub>
+<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Chrome, Edge, Brave, Vivaldi, Opera, Chromium and Firefox on macOS, Windows, and Linux, and with Safari on macOS.</sub>
 <br>
 <sub>MIT © Michail Michailidis</sub>
 </div>

@@ -26,7 +26,7 @@ test("ENOENT: a missing file keeps the missing-file message", () => {
   const file = path.join(tmp(), "Bookmarks");
   const message = messageFor(file);
   assert.ok(message.startsWith(`No bookmarks file at ${file}.`), message);
-  assert.match(message, /Set CHROME_PROFILE/);
+  assert.match(message, /--profile or MNEMOS_PROFILE/);
   assert.doesNotMatch(message, /Cannot read/);
 });
 

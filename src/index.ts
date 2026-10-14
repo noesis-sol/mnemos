@@ -7,13 +7,20 @@
  * that signal: which topics the user cares about, which sources they approve
  * of, and what they have been saving recently.
  *
+ * Startup flags (each wins over its environment variable):
+ *   --browser <id>           as MNEMOS_BOOKMARKS_BROWSER
+ *   --profile <name>         as MNEMOS_PROFILE
+ *
  * Environment variables:
- *   MNEMOS_BOOKMARKS_BROWSER chrome (default), chromium, edge, brave, vivaldi,
- *                            firefox or safari
- *   CHROME_PROFILE           Profile directory name (default: "Default"), or
- *                            for Firefox the profile name (default: Firefox's)
- *   CHROME_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
- *                            file (overrides the above)
+ *   MNEMOS_BOOKMARKS_BROWSER chrome (default), chrome-beta, chrome-dev,
+ *                            chrome-canary, chromium, edge, brave, vivaldi,
+ *                            opera, firefox or safari
+ *   MNEMOS_PROFILE           Profile directory name (default: "Default"), or
+ *                            for Firefox the profile name (default: Firefox's);
+ *                            CHROME_PROFILE is an older alias
+ *   MNEMOS_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
+ *                            file (overrides the above); CHROME_BOOKMARKS_PATH
+ *                            is an older alias
  *   MNEMOS_FETCH_PAGES       0 turns off fetching bookmarked pages in the
  *                            background (fetcher.ts)
  *   MNEMOS_BROWSER           Path to a Chromium-based browser's executable to
@@ -33,6 +40,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import * as lib from "./lib.js";
+import { parseStartupArgs, setStartupOptions } from "./browsers.js";
 import { ICONS } from "./icon.js";
 import { createEmbedder } from "./embedder.js";
 import { Indexer } from "./indexer.js";
@@ -243,6 +251,12 @@ function shutdown(): void {
 }
 
 async function main(): Promise<void> {
+  try {
+    setStartupOptions(parseStartupArgs(process.argv.slice(2)));
+  } catch (e) {
+    console.error(`mnemos: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(2);
+  }
   // The client closing stdin is how an MCP server is told to exit.
   process.stdin.once("end", shutdown);
   process.stdin.once("close", shutdown);

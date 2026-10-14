@@ -1,7 +1,7 @@
 {
   "name": "mnemos-mcp",
   "version": "0.3.1",
-  "description": "MCP server exposing local browser bookmarks (Chrome, Edge, Brave, Vivaldi, Firefox, Safari) as a signal of what the user values and endorses, with local semantic search over their titles and pages",
+  "description": "MCP server exposing local browser bookmarks (Chrome, Edge, Brave, Vivaldi, Opera, Chromium, Firefox, Safari) as a signal of what the user values and endorses, with local semantic search over their titles and pages",
   "type": "module",
   "bin": {
     "mnemos-mcp": "dist/index.js"
@@ -27,9 +27,11 @@
     "model-context-protocol",
     "mcp-server",
     "chrome",
+    "chromium",
     "edge",
     "brave",
     "vivaldi",
+    "opera",
     "firefox",
     "safari",
     "bookmarks",
