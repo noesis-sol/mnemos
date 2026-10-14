@@ -83,11 +83,16 @@ test("e2e errors: search_bookmarks with a numeric query is isError", async () =>
   assert.match(result.content[0].text, /query/);
 });
 
-test("e2e errors: an empty query is a normal result carrying error, not isError", async () => {
+test("e2e errors: an empty query is isError, with the message as its text", async () => {
   const result = await client.callTool({ name: "search_bookmarks", arguments: { query: "" } });
-  assert.notEqual(result.isError, true);
-  const data = JSON.parse(result.content[0].text);
-  assert.match(data.error, /Empty query/);
+  assert.equal(result.isError, true);
+  assert.match(result.content[0].text, /^Empty query\. Provide one or more search words/);
+});
+
+test("e2e errors: an empty folder name is isError, with the message as its text", async () => {
+  const result = await client.callTool({ name: "list_folder_contents", arguments: { folder: "  " } });
+  assert.equal(result.isError, true);
+  assert.equal(result.content[0].text, "Empty folder name. Call list_folders to see available folders.");
 });
 
 test("e2e errors: an unknown tool name is an error", async () => {

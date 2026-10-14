@@ -158,11 +158,10 @@ export async function semanticSearch(
 ): Promise<unknown> {
   const words = lib.queryWords(query);
   if (words.length === 0) {
-    return {
-      error:
-        "Empty query. Describe what you are looking for, or use " +
+    throw new Error(
+      "Empty query. Describe what you are looking for, or use " +
         "list_folders / recent_bookmarks to browse instead.",
-    };
+    );
   }
   const filter = folder?.trim() ? folder : undefined;
   const { embedder, indexer } = ctx;

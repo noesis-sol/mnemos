@@ -8,3 +8,6 @@
 
 # Binary property-list fixtures (Safari bookmarks): never convert.
 *.plist binary
+
+# Tickets each add their own lines: keep both sides on a merge.
+CHANGELOG.md merge=union

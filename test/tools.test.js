@@ -36,8 +36,7 @@ test("search: Greek query", () => {
 });
 
 test("search regression: empty query is rejected, not 'match everything'", () => {
-  const r = lib.searchBookmarks("   ");
-  assert.ok(r.error && /empty query/i.test(r.error));
+  assert.throws(() => lib.searchBookmarks("   "), /Empty query/);
 });
 
 test("search: total_matches reports the pre-truncation count", () => {
@@ -170,8 +169,7 @@ test("list_folder_contents regression: slash-named folder matches by full name",
 });
 
 test("list_folder_contents: empty name is rejected", () => {
-  const r = lib.listFolderContents("  ");
-  assert.ok(r.error);
+  assert.throws(() => lib.listFolderContents("  "), /Empty folder name/);
 });
 
 // --- recent ----------------------------------------------------------------

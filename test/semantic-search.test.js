@@ -247,8 +247,9 @@ test("e2e: the folder filter, as the other tools match folders", async () => {
 });
 
 test("e2e: an empty query is an error to the caller, not a crash", async () => {
-  const data = await search(client, { query: "   " });
-  assert.match(data.error, /Empty query/);
+  const empty = await client.callTool({ name: "semantic_search", arguments: { query: "   " } });
+  assert.equal(empty.isError, true);
+  assert.match(empty.content[0].text, /^Empty query\. Describe what you are looking for/);
   const missing = await client.callTool({ name: "semantic_search", arguments: {} });
   assert.equal(missing.isError, true);
   await client.close();

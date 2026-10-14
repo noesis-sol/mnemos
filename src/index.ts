@@ -44,7 +44,7 @@ const { version: VERSION } = require("../package.json") as { version: string };
 
 type ToolResult = { content: { type: "text"; text: string }[]; isError?: boolean };
 
-/** Serialize a tool result; convert loadRoots() failures into friendly errors. */
+/** Serialize a tool result; convert thrown errors (loadRoots() failures, empty input) into isError results. */
 function safely(fn: () => unknown): ToolResult {
   try {
     return { content: [{ type: "text" as const, text: JSON.stringify(fn()) }] };

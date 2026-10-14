@@ -410,11 +410,10 @@ export function cap(limit: number | undefined, fallback: number, max = 200): num
 export function searchBookmarks(query: string, folder?: string, limit?: number): unknown {
   const words = queryWords(query);
   if (words.length === 0) {
-    return {
-      error:
-        "Empty query. Provide one or more search words, or use " +
+    throw new Error(
+      "Empty query. Provide one or more search words, or use " +
         "list_folders / recent_bookmarks to browse instead.",
-    };
+    );
   }
   // The filter is optional, so a blank one means "no filter" rather than an
   // error — unlike list_folder_contents, where the folder is the whole request.
@@ -478,7 +477,7 @@ export function listFolders(): unknown {
 
 export function listFolderContents(folder: string, limit?: number): unknown {
   if (!folder.trim()) {
-    return { error: "Empty folder name. Call list_folders to see available folders." };
+    throw new Error("Empty folder name. Call list_folders to see available folders.");
   }
   const matches = [];
   for (const entry of allBookmarks()) {
