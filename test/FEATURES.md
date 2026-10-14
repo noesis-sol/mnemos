@@ -273,9 +273,14 @@ root entry and that matrix in step.
   a file without the key passed over). Detection failing reads the first browser with bookmarks
   with a warning, or errors when there is none; an unsupported or unknown default browser errors
   naming it and `--browser <id>`; the result, or the error, is detected once.
+  `test/windows-firefox-forks.test.js`: LibreWolf's `LibreWolfHTM`; Firefox's ProgIds
+  (`FirefoxURL-<hash>`, shared by Zen and Floorp) named by the executable their
+  `shell\open\command` runs (a localized default value name included), Firefox without one, an
+  unknown fork's executable an error.
 - **Untested**: the real `osascript`, `reg` and `xdg-settings` commands (`osascript` checked by
-  hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11.
-- **Tickets**: mnemos-5ij.3
+  hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11; the ProgIds of real
+  LibreWolf, Zen and Floorp installs (taken from their installers' sources).
+- **Tickets**: mnemos-5ij.3; mnemos-7uj
 
 ## Browser selection and sources
 

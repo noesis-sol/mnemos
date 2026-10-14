@@ -86,11 +86,11 @@ test("tables: every browser is reachable on each platform it runs on", () => {
   const values = (table) => new Set(Object.values(table));
   assert.deepEqual([...values(db.MAC_BUNDLE_IDS)].sort(), [...BROWSERS].sort());
   const notSafari = BROWSERS.filter((b) => b !== "safari").sort();
-  // Windows: the ProgIds of LibreWolf, Zen and Floorp are not known yet, and
-  // Tor Browser, a portable install, registers none.
-  const unknownOnWindows = ["librewolf", "zen", "floorp", "tor-browser"];
+  // Windows: Zen and Floorp share Firefox's ProgIds and are told apart by
+  // their executables; Tor Browser, a portable install, registers none.
+  const unknownOnWindows = ["tor-browser"];
   assert.deepEqual(
-    [...values(db.WINDOWS_PROGIDS)].sort(),
+    [...new Set([...values(db.WINDOWS_PROGIDS), ...values(db.WINDOWS_FIREFOX_EXECUTABLES)])].sort(),
     notSafari.filter((b) => !unknownOnWindows.includes(b)),
   );
   assert.deepEqual([...values(db.LINUX_DESKTOP_FILES)].sort(), notSafari);

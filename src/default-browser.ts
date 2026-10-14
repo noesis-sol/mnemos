@@ -116,7 +116,22 @@ export const WINDOWS_PROGIDS: Record<string, Browser> = {
   operastable: "opera",
   firefoxurl: "firefox",
   firefoxhtml: "firefox",
+  librewolfhtm: "librewolf",
   waterfoxurl: "waterfox",
+};
+
+/**
+ * Executables of the browsers that register Firefox's ProgIds. Firefox's
+ * installer names them FirefoxURL-<hash> and FirefoxHTML-<hash>, the hash of
+ * the install directory, and Zen and Floorp build that installer unchanged:
+ * their ProgIds name Firefox, and only the command one opens tells them apart.
+ */
+export const WINDOWS_FIREFOX_EXECUTABLES: Record<string, Browser> = {
+  "firefox.exe": "firefox",
+  "zen.exe": "zen",
+  "floorp.exe": "floorp",
+  "librewolf.exe": "librewolf",
+  "waterfox.exe": "waterfox",
 };
 
 /** Windows ProgIds of browsers mnemos knows but cannot read, by name. */
@@ -181,8 +196,11 @@ export const LINUX_UNSUPPORTED: Record<string, string> = {
   "org.qutebrowser.qutebrowser": "qutebrowser",
 };
 
-/** What the OS's name for the default browser names. */
-export function identifyBrowser(platform: NodeJS.Platform, id: string): Identified {
+/**
+ * What the OS's name for the default browser names. On Windows, `command` is
+ * the command line the ProgId opens, which tells Firefox's forks apart.
+ */
+export function identifyBrowser(platform: NodeJS.Platform, id: string, command?: string): Identified {
   const key = id.trim().toLowerCase();
   let supported: Browser | undefined;
   let unsupported: string | undefined;
@@ -199,6 +217,12 @@ export function identifyBrowser(platform: NodeJS.Platform, id: string): Identifi
     };
     supported = lookup(WINDOWS_PROGIDS);
     unsupported = lookup(WINDOWS_UNSUPPORTED);
+    // "C:\Program Files\Zen Browser\zen.exe" -osint -url "%1" → zen.exe.
+    const exe = command && /([^\\/"]+?\.exe)(?:"|\s|$)/i.exec(command)?.[1].toLowerCase();
+    if (supported === "firefox" && exe) {
+      supported = WINDOWS_FIREFOX_EXECUTABLES[exe];
+      if (!supported) return { unknown: `${id.trim()} (${exe})` };
+    }
   } else {
     const name = key.replace(/\.desktop$/, "");
     supported = LINUX_DESKTOP_FILES[name];
@@ -272,6 +296,24 @@ export function detectDefaultBrowserId(options: DetectOptions = {}): DetectedId 
   const fromList = mimeappsHandler(env, home);
   if (fromList) return fromList;
   return { failure: "xdg-settings gave no answer and no mimeapps.list sets x-scheme-handler/https" };
+}
+
+/**
+ * The command line a Windows ProgId opens, when it is one of Firefox's (which
+ * its forks share; see WINDOWS_FIREFOX_EXECUTABLES) and the registry has it.
+ * HKCR merges the user's and the machine's classes.
+ */
+function progIdCommand(progId: string, run: (command: string, args: string[]) => string): string | undefined {
+  const named = identifyBrowser("win32", progId);
+  if (!("browser" in named) || named.browser !== "firefox") return undefined;
+  let out: string;
+  try {
+    out = run("reg", ["query", `HKCR\\${progId.trim()}\\shell\\open\\command`, "/ve"]);
+  } catch {
+    return undefined;
+  }
+  // The default value's name is localized: "(Default)", "(Standard)", …
+  return /\sREG_(?:EXPAND_)?SZ\s+(.*\S)\s*$/im.exec(out)?.[1];
 }
 
 /**
@@ -384,7 +426,8 @@ export function resolveDefaultBrowser(options: DetectOptions = {}): DefaultBrows
     };
   }
 
-  const identified = identifyBrowser(platform, detected.id);
+  const command = platform === "win32" ? progIdCommand(detected.id, options.run ?? runCommand) : undefined;
+  const identified = identifyBrowser(platform, detected.id, command);
   if ("browser" in identified) return { browser: identified.browser, detected };
 
   // Never another browser instead: its bookmarks would pass for the current one's.
