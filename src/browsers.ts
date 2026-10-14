@@ -3,8 +3,9 @@
  * formats that are not Chrome's JSON. Chromium-based browsers (Chrome and its
  * Beta, Dev and Canary channels, Chromium, Edge, Brave, Vivaldi, Opera) all
  * write the same `Bookmarks` JSON file,
- * which lib.ts parses; Firefox keeps bookmarks in the `places.sqlite` database
- * and Safari in a binary `Bookmarks.plist`. Both readers convert to the
+ * which lib.ts parses; Firefox and its forks (LibreWolf, Waterfox, Zen, Floorp,
+ * Tor Browser) keep bookmarks in the `places.sqlite` database and Safari in a
+ * binary `Bookmarks.plist`. Both readers convert to the
  * Chrome-shaped BookmarkNode tree, so every tool works on every browser.
  */
 
@@ -35,10 +36,17 @@ export const BROWSERS = [
   "vivaldi",
   "opera",
   "firefox",
+  "librewolf",
+  "waterfox",
+  "zen",
+  "floorp",
+  "tor-browser",
   "safari",
 ] as const;
 export type Browser = (typeof BROWSERS)[number];
-type ChromiumBrowser = Exclude<Browser, "firefox" | "safari">;
+/** Firefox and the forks that keep its profile layout (profiles.ini, places.sqlite). */
+type FirefoxBrowser = "firefox" | "librewolf" | "waterfox" | "zen" | "floorp" | "tor-browser";
+type ChromiumBrowser = Exclude<Browser, FirefoxBrowser | "safari">;
 
 export const BROWSER_NAMES: Record<Browser, string> = {
   chrome: "Chrome",
@@ -51,6 +59,11 @@ export const BROWSER_NAMES: Record<Browser, string> = {
   vivaldi: "Vivaldi",
   opera: "Opera",
   firefox: "Firefox",
+  librewolf: "LibreWolf",
+  waterfox: "Waterfox",
+  zen: "Zen",
+  floorp: "Floorp",
+  "tor-browser": "Tor Browser",
   safari: "Safari",
 };
 
@@ -118,7 +131,12 @@ export function bookmarksPathOverride(env: NodeJS.ProcessEnv = process.env): str
 }
 
 export function isChromium(browser: Browser): browser is ChromiumBrowser {
-  return browser !== "firefox" && browser !== "safari";
+  return !isFirefox(browser) && browser !== "safari";
+}
+
+/** Firefox or one of its forks, read with the Firefox reader. */
+export function isFirefox(browser: Browser): browser is FirefoxBrowser {
+  return Object.hasOwn(FIREFOX_DIRS, browser);
 }
 
 /** Where a Chromium-based browser keeps its user-data directory. */
@@ -367,31 +385,113 @@ export function chromiumProfilesWithBookmarks(base: string): string[] {
 // Firefox
 // ---------------------------------------------------------------------------
 
+/** The directories the Firefox profile directories are found below. */
+interface FirefoxRoots {
+  home: string;
+  /** ~/Library/Application Support (macOS). */
+  support: string;
+  /** %APPDATA%, the Roaming directory (Windows). */
+  appData: string;
+  /** $XDG_CONFIG_HOME, else ~/.config (Linux). */
+  config: string;
+}
+
 /**
- * The Firefox directory holding profiles.ini. Linux has several: the classic
- * ~/.mozilla/firefox, the XDG location newer Firefox uses for new installs,
- * and the Snap and Flatpak sandboxes. The first one with a profiles.ini wins.
+ * Where Firefox and each fork may keep profiles.ini, per platform, in the
+ * order they are tried. The forks differ from Firefox only in these
+ * directories. Tor Browser is portable: its profiles sit inside the install,
+ * so the candidates are where its installer and torbrowser-launcher put it.
+ */
+const FIREFOX_DIRS: Record<
+  FirefoxBrowser,
+  (at: FirefoxRoots) => { darwin: string[]; win32: string[]; linux: string[] }
+> = {
+  firefox: (at) => ({
+    darwin: [path.join(at.support, "Firefox")],
+    win32: [path.join(at.appData, "Mozilla", "Firefox")],
+    // The classic directory, the XDG one newer Firefox uses for new installs,
+    // then the Snap's and the Flatpak's.
+    linux: [
+      path.join(at.home, ".mozilla", "firefox"),
+      path.join(at.config, "mozilla", "firefox"),
+      path.join(at.home, "snap", "firefox", "common", ".mozilla", "firefox"),
+      path.join(at.home, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox"),
+    ],
+  }),
+  librewolf: (at) => ({
+    darwin: [path.join(at.support, "librewolf")],
+    win32: [path.join(at.appData, "librewolf")],
+    linux: [
+      path.join(at.home, ".librewolf"),
+      path.join(at.home, ".var", "app", "io.gitlab.librewolf-community", ".librewolf"),
+    ],
+  }),
+  waterfox: (at) => ({
+    darwin: [path.join(at.support, "Waterfox")],
+    win32: [path.join(at.appData, "Waterfox")],
+    linux: [
+      path.join(at.home, ".waterfox"),
+      path.join(at.home, ".var", "app", "net.waterfox.waterfox", ".waterfox"),
+    ],
+  }),
+  zen: (at) => ({
+    darwin: [path.join(at.support, "zen")],
+    win32: [path.join(at.appData, "zen")],
+    linux: [
+      path.join(at.home, ".zen"),
+      path.join(at.home, ".var", "app", "app.zen_browser.zen", ".zen"),
+    ],
+  }),
+  floorp: (at) => ({
+    darwin: [path.join(at.support, "Floorp")],
+    win32: [path.join(at.appData, "Floorp")],
+    linux: [
+      path.join(at.home, ".floorp"),
+      path.join(at.home, ".var", "app", "one.ablaze.floorp", ".floorp"),
+    ],
+  }),
+  "tor-browser": (at) => {
+    const data = ["Browser", "TorBrowser", "Data", "Browser"];
+    const launcher = ["torbrowser", "tbb", "x86_64", "tor-browser", ...data];
+    return {
+      darwin: [path.join(at.support, "TorBrowser-Data", "Browser")],
+      // The installer's default is the Desktop, which OneDrive may have moved.
+      win32: [
+        path.join(at.home, "Desktop", "Tor Browser", ...data),
+        path.join(at.home, "OneDrive", "Desktop", "Tor Browser", ...data),
+      ],
+      // The release tarball unpacked in the home directory, then
+      // torbrowser-launcher's install, native and Flatpak.
+      linux: [
+        path.join(at.home, "tor-browser", ...data),
+        path.join(at.home, "tor-browser_en-US", ...data),
+        path.join(at.home, ".local", "share", ...launcher),
+        path.join(at.home, ".var", "app", "org.torproject.torbrowser-launcher", "data", ...launcher),
+      ],
+    };
+  },
+};
+
+/**
+ * The directory holding profiles.ini of Firefox or one of its forks. Where
+ * there are several candidates (Linux's package, Snap and Flatpak; Tor
+ * Browser's install locations), the first one with a profiles.ini wins.
  */
 export function firefoxBase(
+  browser: FirefoxBrowser = "firefox",
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const home = os.homedir();
-  switch (platform) {
-    case "darwin":
-      return path.join(home, "Library", "Application Support", "Firefox");
-    case "win32":
-      return path.join(env.APPDATA || path.join(home, "AppData", "Roaming"), "Mozilla", "Firefox");
-    default: {
-      const candidates = [
-        path.join(home, ".mozilla", "firefox"),
-        path.join(env.XDG_CONFIG_HOME || path.join(home, ".config"), "mozilla", "firefox"),
-        path.join(home, "snap", "firefox", "common", ".mozilla", "firefox"),
-        path.join(home, ".var", "app", "org.mozilla.firefox", ".mozilla", "firefox"),
-      ];
-      return candidates.find((c) => fs.existsSync(path.join(c, "profiles.ini"))) ?? candidates[0];
-    }
-  }
+  const dirs = FIREFOX_DIRS[browser]({
+    home,
+    support: path.join(home, "Library", "Application Support"),
+    appData: env.APPDATA || path.join(home, "AppData", "Roaming"),
+    config: env.XDG_CONFIG_HOME || path.join(home, ".config"),
+  });
+  // linux and other unixes take Linux's directories
+  const candidates = platform === "darwin" ? dirs.darwin : platform === "win32" ? dirs.win32 : dirs.linux;
+  return candidates.find((c) => fs.existsSync(path.join(c, "profiles.ini"))) ?? candidates[0];
 }
 
 export interface FirefoxProfile {
@@ -456,20 +556,22 @@ export function firefoxProfiles(base: string): FirefoxProfile[] {
 }
 
 /**
- * places.sqlite of the Firefox profile `wanted` names (its name or its
- * directory's name), or of the default profile when it is unset.
+ * places.sqlite of the profile `wanted` names (its name or its directory's
+ * name) of Firefox or a fork, or of the default profile when it is unset.
  */
 export function firefoxPlacesPath(
+  browser: FirefoxBrowser,
   wanted: string | undefined,
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const base = firefoxBase(platform, env);
+  const base = firefoxBase(browser, platform, env);
   const profiles = firefoxProfiles(base);
+  const name = BROWSER_NAMES[browser];
   if (profiles.length === 0) {
     throw new Error(
-      `No Firefox profiles found: no profiles.ini in ${base}. ` +
-        `Set ${PATH_ENV} to a Firefox places.sqlite file.`,
+      `No ${name} profiles found: no profiles.ini in ${base}. ` +
+        `Set ${PATH_ENV} to a ${name} places.sqlite file.`,
     );
   }
   const profile = wanted
@@ -478,8 +580,8 @@ export function firefoxPlacesPath(
     : (profiles.find((p) => p.isDefault) ?? profiles[0]);
   if (!profile) {
     throw new Error(
-      `No Firefox profile named "${wanted}" in ${path.join(base, "profiles.ini")}. ` +
-        `Firefox profiles that have bookmarks: ${firefoxProfilesWithBookmarks(base).join(", ") || "none"}. ` +
+      `No ${name} profile named "${wanted}" in ${path.join(base, "profiles.ini")}. ` +
+        `${name} profiles that have bookmarks: ${firefoxProfilesWithBookmarks(base).join(", ") || "none"}. ` +
         `Choose one with --profile or ${PROFILE_ENV} (profile name or directory), or set ${PATH_ENV}.`,
     );
   }
@@ -762,7 +864,9 @@ export function browsersWithBookmarks(
   return BROWSERS.filter((browser) => {
     if (browser === except) return false;
     try {
-      if (browser === "firefox") return firefoxProfilesWithBookmarks(firefoxBase(platform, env)).length > 0;
+      if (isFirefox(browser)) {
+        return firefoxProfilesWithBookmarks(firefoxBase(browser, platform, env)).length > 0;
+      }
       if (browser === "safari") return platform === "darwin" && fs.existsSync(safariBookmarksPath());
       return chromiumProfiles(browser, platform, env).length > 0;
     } catch {

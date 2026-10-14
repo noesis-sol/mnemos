@@ -86,7 +86,13 @@ test("tables: every browser is reachable on each platform it runs on", () => {
   const values = (table) => new Set(Object.values(table));
   assert.deepEqual([...values(db.MAC_BUNDLE_IDS)].sort(), [...BROWSERS].sort());
   const notSafari = BROWSERS.filter((b) => b !== "safari").sort();
-  assert.deepEqual([...values(db.WINDOWS_PROGIDS)].sort(), notSafari);
+  // Windows: the ProgIds of LibreWolf, Zen and Floorp are not known yet, and
+  // Tor Browser, a portable install, registers none.
+  const unknownOnWindows = ["librewolf", "zen", "floorp", "tor-browser"];
+  assert.deepEqual(
+    [...values(db.WINDOWS_PROGIDS)].sort(),
+    notSafari.filter((b) => !unknownOnWindows.includes(b)),
+  );
   assert.deepEqual([...values(db.LINUX_DESKTOP_FILES)].sort(), notSafari);
 });
 
@@ -163,7 +169,7 @@ test("identify: Linux .desktop names of packages, Snaps and Flatpaks", () => {
   for (const [id, browser] of Object.entries(cases)) {
     assert.deepEqual(db.identifyBrowser("linux", id), { browser }, id);
   }
-  assert.deepEqual(db.identifyBrowser("linux", "librewolf.desktop"), { unsupported: "LibreWolf" });
+  assert.deepEqual(db.identifyBrowser("linux", "vivaldi-snapshot.desktop"), { unsupported: "Vivaldi Snapshot" });
   assert.deepEqual(db.identifyBrowser("linux", "org.gnome.Epiphany.desktop"), { unsupported: "GNOME Web" });
   assert.deepEqual(db.identifyBrowser("linux", "surf.desktop"), { unknown: "surf.desktop" });
 });

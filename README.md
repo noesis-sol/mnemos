@@ -6,7 +6,7 @@
 
 *mnemos* (from the Greek **μνήμη** — memory) is a local
 [MCP](https://modelcontextprotocol.io) server that gives AI assistants access to your
-browser bookmarks (Chrome, Edge, Brave, Vivaldi, Opera, Chromium, Firefox or Safari) — not as a pile of links, but as a curated signal of what you
+browser bookmarks (Chrome, Edge, Brave, Vivaldi, Opera, Chromium, Firefox and its forks, or Safari) — not as a pile of links, but as a curated signal of what you
 consider important, which sources you trust, and which opinions you endorse.
 It finds them by keyword, or by meaning: a local embedding model searches their
 titles and the text of the pages they point to, in any language.
@@ -152,7 +152,7 @@ variable:
 
 | Flag | Environment variable | Default | Purpose |
 |------|----------------------|---------|---------|
-| `--browser <id>` | `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox` or `safari` |
+| `--browser <id>` | `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `librewolf`, `waterfox`, `zen`, `floorp`, `tor-browser` or `safari` |
 | `--profile <name>` | `MNEMOS_PROFILE` | the profile the browser opens | Profile name as the browser shows it (e.g. `Work`, any case) or its directory (e.g. `Profile 3`). `CHROME_PROFILE` is an older name for the variable |
 
 For example, `claude mcp add --scope user mnemos -- npx -y mnemos-mcp --browser firefox`,
@@ -190,10 +190,16 @@ Environment variables are set with `-e`, e.g. `claude mcp add --scope user mnemo
 | Chromium | `~/Library/Application Support/Chromium` | `%LOCALAPPDATA%\Chromium\User Data` | `~/.config/chromium` |
 | Chrome Beta, Dev, Canary | `~/Library/Application Support/Google/Chrome Beta` (`Chrome Dev`, `Chrome Canary`) | `%LOCALAPPDATA%\Google\Chrome Beta\User Data` (`Chrome Dev`, `Chrome SxS`) | `~/.config/google-chrome-beta` (`google-chrome-unstable`, `google-chrome-canary`) |
 | Firefox | `~/Library/Application Support/Firefox` | `%APPDATA%\Mozilla\Firefox` | `~/.mozilla/firefox`, `~/.config/mozilla/firefox`, Snap or Flatpak |
+| LibreWolf | `~/Library/Application Support/librewolf` | `%APPDATA%\librewolf` | `~/.librewolf` or Flatpak |
+| Waterfox | `~/Library/Application Support/Waterfox` | `%APPDATA%\Waterfox` | `~/.waterfox` or Flatpak |
+| Zen | `~/Library/Application Support/zen` | `%APPDATA%\zen` | `~/.zen` or Flatpak |
+| Floorp | `~/Library/Application Support/Floorp` | `%APPDATA%\Floorp` | `~/.floorp` or Flatpak |
+| Tor Browser | `~/Library/Application Support/TorBrowser-Data/Browser` | `Desktop\Tor Browser\Browser\TorBrowser\Data\Browser` (also under `OneDrive`) | `~/tor-browser/Browser/TorBrowser/Data/Browser` (or `~/tor-browser_en-US`), or torbrowser-launcher's install, native or Flatpak |
 | Safari | `~/Library/Safari/Bookmarks.plist` | — | — |
 
 > **Linux**: a browser installed as a Flatpak keeps the same directory below
-> `~/.var/app/<app id>/config` (e.g. `~/.var/app/org.chromium.Chromium/config/chromium`),
+> `~/.var/app/<app id>/config` (e.g. `~/.var/app/org.chromium.Chromium/config/chromium`;
+> Firefox's forks below `~/.var/app/<app id>`, e.g. `~/.var/app/one.ablaze.floorp/.floorp`),
 > and the Chromium and Brave Snaps below `~/snap` (`~/snap/chromium/common/chromium`,
 > `~/snap/brave/current/.config/BraveSoftware/Brave-Browser`). mnemos reads the
 > first of these that the browser has used.
@@ -205,7 +211,11 @@ Environment variables are set with `-e`, e.g. `claude mcp add --scope user mnemo
 > reads Firefox's `places.sqlite` with it too. Firefox profiles are those
 > listed in `profiles.ini`; without a profile, mnemos reads the one
 > `installs.ini` names for your Firefox install (else the `profiles.ini`
-> default).
+> default). Its forks — LibreWolf, Waterfox, Zen, Floorp and Tor Browser —
+> keep the same `profiles.ini` and `places.sqlite` in the directories above, and
+> mnemos reads them the same way. Tor Browser is portable: if you unpacked it
+> elsewhere, set `MNEMOS_BOOKMARKS_PATH` to its
+> `Browser/TorBrowser/Data/Browser/profile.default/places.sqlite`.
 >
 > **Safari**: macOS lets only apps with *Full Disk Access* read Safari's
 > bookmarks. Add the app that runs mnemos — your terminal for Claude Code, or
@@ -371,7 +381,7 @@ to main and pull request (on all three weekly).
 ---
 
 <div align="center">
-<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Chrome, Edge, Brave, Vivaldi, Opera, Chromium and Firefox on macOS, Windows, and Linux, and with Safari on macOS.</sub>
+<sub>Built with the <a href="https://github.com/modelcontextprotocol/typescript-sdk">official MCP TypeScript SDK</a>. Works with Chrome, Edge, Brave, Vivaldi, Opera, Chromium, Firefox, LibreWolf, Waterfox, Zen, Floorp and Tor Browser on macOS, Windows, and Linux, and with Safari on macOS.</sub>
 <br>
 <sub>MIT © Michail Michailidis</sub>
 </div>

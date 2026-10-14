@@ -24,6 +24,7 @@ import {
   firefoxPlacesPath,
   firefoxProfilesWithBookmarks,
   isChromium,
+  isFirefox,
   isSqlite,
   readFirefoxRoots,
   readSafariRoots,
@@ -80,7 +81,7 @@ export function bookmarksPath(
   if (override) return override;
   const browser = selectedBrowser(env, options);
   const profile = selectedProfile(env, options);
-  if (browser === "firefox") return firefoxPlacesPath(profile, platform, env);
+  if (isFirefox(browser)) return firefoxPlacesPath(browser, profile, platform, env);
   if (browser === "safari") return safariBookmarksPath();
   return chromiumBookmarksPath(browser, profile, platform, env);
 }
@@ -123,11 +124,11 @@ function unreadable(browser: Browser, file: string, error: unknown): Error {
     message = `No bookmarks file at ${file}: Safari keeps its bookmarks only on macOS.`;
   } else if (browser === "safari") {
     message = `No bookmarks file at ${file}. Set ${PATH_ENV} to a Safari Bookmarks.plist.`;
-  } else if (browser === "firefox") {
-    const available = firefoxProfilesWithBookmarks(firefoxBase());
+  } else if (isFirefox(browser)) {
+    const available = firefoxProfilesWithBookmarks(firefoxBase(browser));
     message =
       `No bookmarks file at ${file}. ` +
-      `Firefox profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
+      `${BROWSER_NAMES[browser]} profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
       `Choose one with --profile or ${PROFILE_ENV} (profile name or directory), or set ${PATH_ENV}.`;
   } else {
     const available = chromiumProfileLabels(browser);

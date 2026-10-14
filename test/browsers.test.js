@@ -67,7 +67,7 @@ test("MNEMOS_BOOKMARKS_BROWSER: an unknown browser is an error naming the choice
   process.env.MNEMOS_BOOKMARKS_BROWSER = "netscape";
   assert.throws(
     () => lib.listFolders(),
-    /MNEMOS_BOOKMARKS_BROWSER is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, safari\./,
+    /MNEMOS_BOOKMARKS_BROWSER is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, librewolf, waterfox, zen, floorp, tor-browser, safari\./,
   );
 });
 
@@ -270,18 +270,18 @@ const PROFILES_INI = [
 test("Firefox: the profile directory per platform", () => {
   const env = { APPDATA: path.join(home, "Roaming"), XDG_CONFIG_HOME: path.join(home, "xdg") };
   assert.equal(
-    browsers.firefoxBase("darwin", env),
+    browsers.firefoxBase("firefox", "darwin", env),
     path.join(home, "Library", "Application Support", "Firefox"),
   );
-  assert.equal(browsers.firefoxBase("win32", env), path.join(env.APPDATA, "Mozilla", "Firefox"));
-  assert.equal(browsers.firefoxBase("linux", env), path.join(home, ".mozilla", "firefox"));
+  assert.equal(browsers.firefoxBase("firefox", "win32", env), path.join(env.APPDATA, "Mozilla", "Firefox"));
+  assert.equal(browsers.firefoxBase("firefox", "linux", env), path.join(home, ".mozilla", "firefox"));
   // On Linux the first directory holding a profiles.ini wins.
   const snap = path.join(home, "snap", "firefox", "common", ".mozilla", "firefox");
   write(path.join(snap, "profiles.ini"), "[Profile0]\nPath=x\n");
-  assert.equal(browsers.firefoxBase("linux", env), snap);
+  assert.equal(browsers.firefoxBase("firefox", "linux", env), snap);
   const xdg = path.join(env.XDG_CONFIG_HOME, "mozilla", "firefox");
   write(path.join(xdg, "profiles.ini"), "[Profile0]\nPath=x\n");
-  assert.equal(browsers.firefoxBase("linux", env), xdg);
+  assert.equal(browsers.firefoxBase("firefox", "linux", env), xdg);
 });
 
 test("Firefox: profiles.ini's Install default wins over Default=1, which wins over file order", () => {

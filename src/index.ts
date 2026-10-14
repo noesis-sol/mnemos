@@ -14,10 +14,11 @@
  * Environment variables:
  *   MNEMOS_BOOKMARKS_BROWSER chrome (default), chrome-beta, chrome-dev,
  *                            chrome-canary, chromium, edge, brave, vivaldi,
- *                            opera, firefox or safari
+ *                            opera, firefox, librewolf, waterfox, zen, floorp,
+ *                            tor-browser or safari
  *   MNEMOS_PROFILE           Profile display name or directory (default: the
  *                            profile the browser last used, else Default; for
- *                            Firefox, the one it opens); CHROME_PROFILE is an
+ *                            Firefox and its forks, the one it opens); CHROME_PROFILE is an
  *                            older alias
  *   MNEMOS_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
  *                            file (overrides the above); CHROME_BOOKMARKS_PATH
@@ -116,7 +117,7 @@ server.registerTool(
       "folder path is searched too, a topic word matches everything filed " +
       "under a folder of that name. Optionally restrict to folders whose name " +
       "matches `folder` (whole-word match). Bookmarks carry a `description` " +
-      "only where the browser stores one (Vivaldi, Firefox, Safari's Reading " +
+      "only where the browser stores one (Vivaldi, Firefox and its forks, Safari's Reading " +
       "List). Returns JSON with " +
       "`total_matches`; if it exceeds `limit`, the list is truncated — do not " +
       "assume the returned items are all there is.",

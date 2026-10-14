@@ -76,7 +76,7 @@ test("parseStartupArgs: --browser and --profile, spaced or with =, browser case 
 test("parseStartupArgs: an unknown browser, flag or stray argument is an error", () => {
   assert.throws(
     () => browsers.parseStartupArgs(["--browser", "netscape"]),
-    /--browser is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, safari\./,
+    /--browser is "netscape"; use one of: chrome, chrome-beta, chrome-dev, chrome-canary, chromium, edge, brave, vivaldi, opera, firefox, librewolf, waterfox, zen, floorp, tor-browser, safari\./,
   );
   assert.throws(() => browsers.parseStartupArgs(["--browser="]), /--browser is ""; use one of/);
   assert.throws(() => browsers.parseStartupArgs(["--browsers", "edge"]), /Unknown option '--browsers'/);

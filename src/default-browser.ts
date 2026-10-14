@@ -74,6 +74,11 @@ export const MAC_BUNDLE_IDS: Record<string, Browser> = {
   "com.vivaldi.vivaldi": "vivaldi",
   "com.operasoftware.opera": "opera",
   "org.mozilla.firefox": "firefox",
+  "io.gitlab.librewolf-community": "librewolf",
+  "net.waterfox.waterfox": "waterfox",
+  "app.zen-browser.zen": "zen",
+  "one.ablaze.floorp": "floorp",
+  "org.torproject.torbrowser": "tor-browser",
   "com.apple.safari": "safari",
 };
 
@@ -82,13 +87,8 @@ export const MAC_UNSUPPORTED: Record<string, string> = {
   "company.thebrowser.browser": "Arc",
   "company.thebrowser.dia": "Dia",
   "com.kagi.kagimacos": "Orion",
-  "app.zen-browser.zen": "Zen",
   "org.mozilla.firefoxdeveloperedition": "Firefox Developer Edition",
   "org.mozilla.nightly": "Firefox Nightly",
-  "org.torproject.torbrowser": "Tor Browser",
-  "io.gitlab.librewolf-community": "LibreWolf",
-  "net.waterfox.waterfox": "Waterfox",
-  "one.ablaze.floorp": "Floorp",
   "com.duckduckgo.macos.browser": "DuckDuckGo",
   "com.microsoft.edgemac.beta": "Edge Beta",
   "com.microsoft.edgemac.dev": "Edge Dev",
@@ -116,6 +116,7 @@ export const WINDOWS_PROGIDS: Record<string, Browser> = {
   operastable: "opera",
   firefoxurl: "firefox",
   firefoxhtml: "firefox",
+  waterfoxurl: "waterfox",
 };
 
 /** Windows ProgIds of browsers mnemos knows but cannot read, by name. */
@@ -128,7 +129,6 @@ export const WINDOWS_UNSUPPORTED: Record<string, string> = {
   "opera gxstable": "Opera GX",
   operabeta: "Opera Beta",
   operadeveloper: "Opera Developer",
-  waterfoxurl: "Waterfox",
   "ie.https": "Internet Explorer",
   appxq0fevzme2pys62n3e0fbqa7peapykr8v: "Edge Legacy",
 };
@@ -159,6 +159,14 @@ export const LINUX_DESKTOP_FILES: Record<string, Browser> = {
   "firefox-esr": "firefox",
   firefox_firefox: "firefox",
   "org.mozilla.firefox": "firefox",
+  librewolf: "librewolf",
+  "io.gitlab.librewolf-community": "librewolf",
+  waterfox: "waterfox",
+  "net.waterfox.waterfox": "waterfox",
+  "app.zen_browser.zen": "zen",
+  "one.ablaze.floorp": "floorp",
+  torbrowser: "tor-browser",
+  "org.torproject.torbrowser-launcher": "tor-browser",
 };
 
 /** Linux .desktop file names of browsers mnemos knows but cannot read, by name. */
@@ -168,14 +176,6 @@ export const LINUX_UNSUPPORTED: Record<string, string> = {
   "brave-browser-beta": "Brave Beta",
   "brave-browser-nightly": "Brave Nightly",
   "vivaldi-snapshot": "Vivaldi Snapshot",
-  librewolf: "LibreWolf",
-  "io.gitlab.librewolf-community": "LibreWolf",
-  waterfox: "Waterfox",
-  "net.waterfox.waterfox": "Waterfox",
-  "app.zen_browser.zen": "Zen",
-  "one.ablaze.floorp": "Floorp",
-  torbrowser: "Tor Browser",
-  "org.torproject.torbrowser-launcher": "Tor Browser",
   "org.gnome.epiphany": "GNOME Web",
   "org.kde.falkon": "Falkon",
   "org.qutebrowser.qutebrowser": "qutebrowser",

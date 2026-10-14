@@ -208,7 +208,8 @@ root entry and that matrix in step.
 ## Other browsers and descriptions
 
 - **Reached by**: `--browser` / `MNEMOS_BOOKMARKS_BROWSER` (`chrome`, `chrome-beta`, `chrome-dev`,
-  `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `safari`); `CHROME_PROFILE` (for Firefox, a profile name from `profiles.ini`);
+  `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `librewolf`,
+  `waterfox`, `zen`, `floorp`, `tor-browser`, `safari`); `CHROME_PROFILE` (for Firefox, a profile name from `profiles.ini`);
   `CHROME_BOOKMARKS_PATH` pointing at any supported file, its format read from its first bytes;
   `src/browsers.ts` (paths, Firefox's `places.sqlite` through `node:sqlite` on a temporary copy,
   Safari's `Bookmarks.plist`), `src/plist.ts` (binary plist reader), `lib.loadRoots`,
@@ -240,11 +241,19 @@ root entry and that matrix in step.
   profile's file; Opera's root-level `Bookmarks` as the `Default` profile unless `Default/` has
   one, listed in the missing-profile error; Linux Snap and Flatpak directories chosen by their
   `Local State`; existing Chrome configurations unchanged.
+  `test/firefox-forks.test.js` (unit, against a fake home): LibreWolf, Waterfox, Zen, Floorp and
+  Tor Browser as browser ids (`isFirefox`, not `isChromium`, by flag or variable); each one's
+  profiles directory on macOS, Windows, Linux and other unixes; Linux Flatpak directories, and
+  Tor Browser's install locations, tried in order; a generated `places.sqlite` read through each
+  id (path, roots, dates, search) and each found by `browsersWithBookmarks`; the no-`profiles.ini`,
+  missing-file and unknown-profile errors naming the fork; macOS bundle ids, Waterfox's ProgId and
+  Linux `.desktop` names mapping to each fork.
 - **Untested**: real browsers' files (checked by hand on macOS against Chrome, Firefox and
   Safari libraries on 2026-10-13); the "needs Node 22.13" error on older Node; Vivaldi's Trash
   marker (`meta_info.Trash`) against a real Vivaldi file; Edge, Brave and Vivaldi on Windows and
-  Linux; Opera, Chrome's channels and the Snap and Flatpak directories against real installs.
-- **Tickets**: mnemos-xp1; mnemos-5ij.1
+  Linux; Opera, Chrome's channels and the Snap and Flatpak directories against real installs;
+  Firefox's forks against real installs, and their Windows ProgIds (only Waterfox's is mapped).
+- **Tickets**: mnemos-xp1; mnemos-5ij.1; mnemos-5ij.2
 
 ## System default browser
 
@@ -255,7 +264,7 @@ root entry and that matrix in step.
 - **Tests**: `test/default-browser.test.js` (unit, each command's output injected, files in a
   temp home): every table value a browser id, every browser reachable per platform, no key both
   supported and unsupported; bundle ids in any case, ProgIds with an install's suffix, Snap and
-  Flatpak `.desktop` names, known-unsupported (Arc, Orion, Opera GX, LibreWolf) and unknown
+  Flatpak `.desktop` names, known-unsupported (Arc, Orion, Opera GX, Vivaldi Snapshot) and unknown
   names. macOS: `osascript`'s answer, else the https handler in LaunchServices' preferences
   (plist fixtures from `test/fixtures/default-browser/make-launchservices.py`), Safari when it
   has none or there is no file, a failure when the file is unreadable. Windows: `UserChoiceLatest`
