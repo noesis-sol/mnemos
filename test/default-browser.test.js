@@ -238,9 +238,27 @@ test("Windows: UserChoiceLatest wins over UserChoice", () => {
   ]);
 });
 
+test("Windows 11 24H2: the ProgId subkey of UserChoiceLatest wins over a stale UserChoice", () => {
+  const { run, calls } = runner({
+    reg: (args) => {
+      if (args[1].endsWith("UserChoiceLatest\\ProgId")) return regOutput("UserChoiceLatest\\ProgId", "BraveHTML");
+      if (args[1].endsWith("UserChoice")) return regOutput("UserChoice", "ChromeHTML");
+      return fails(); // UserChoiceLatest itself holds only Hash
+    },
+  });
+  assert.deepEqual(db.detectDefaultBrowserId({ platform: "win32", home, run }), {
+    id: "BraveHTML",
+    source: "registry (UserChoiceLatest\\ProgId)",
+  });
+  assert.equal(
+    calls[1][2],
+    "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoiceLatest\\ProgId",
+  );
+});
+
 test("Windows: UserChoice when there is no UserChoiceLatest key", () => {
   const { run } = runner({
-    reg: (args) => (args[1].endsWith("UserChoiceLatest") ? fails() : regOutput("UserChoice", "MSEdgeHTM")),
+    reg: (args) => (args[1].includes("UserChoiceLatest") ? fails() : regOutput("UserChoice", "MSEdgeHTM")),
   });
   assert.deepEqual(db.detectDefaultBrowserId({ platform: "win32", home, run }), {
     id: "MSEdgeHTM",

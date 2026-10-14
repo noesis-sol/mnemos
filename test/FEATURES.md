@@ -259,7 +259,7 @@ root entry and that matrix in step.
   names. macOS: `osascript`'s answer, else the https handler in LaunchServices' preferences
   (plist fixtures from `test/fixtures/default-browser/make-launchservices.py`), Safari when it
   has none or there is no file, a failure when the file is unreadable. Windows: `UserChoiceLatest`
-  over `UserChoice`, a ProgId with spaces, no key or value a failure. Linux: `xdg-settings`, else
+  over `UserChoice`, its `ProgId` subkey (24H2) over a stale `UserChoice`, a ProgId with spaces, no key or value a failure. Linux: `xdg-settings`, else
   `x-scheme-handler/https` from `mimeapps.list` in the spec's order (desktop-specific files first,
   a file without the key passed over). Detection failing reads the first browser with bookmarks
   with a warning, or errors when there is none; an unsupported or unknown default browser errors

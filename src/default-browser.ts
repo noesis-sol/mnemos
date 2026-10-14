@@ -254,9 +254,11 @@ export function detectDefaultBrowserId(options: DetectOptions = {}): DetectedId 
   }
 
   if (platform === "win32") {
-    // Windows 11 builds from 2025 keep the user's choice in UserChoiceLatest;
-    // older ones, and apps that set it the old way, in UserChoice.
-    for (const key of ["UserChoiceLatest", "UserChoice"]) {
+    // Windows 11 24H2 and later keep the user's choice in UserChoiceLatest,
+    // its ProgId value in a ProgId subkey (some builds put it on the key
+    // itself), and may leave a stale one in UserChoice; older Windows, and apps
+    // that set the default the old way, use UserChoice alone.
+    for (const key of ["UserChoiceLatest", "UserChoiceLatest\\ProgId", "UserChoice"]) {
       const out = tryRun("reg", ["query", `${WINDOWS_ASSOCIATIONS}\\${key}`, "/v", "ProgId"]);
       const progId = out && /^\s*ProgId\s+REG_SZ\s+(.*\S)\s*$/im.exec(out)?.[1];
       if (progId) return { id: progId, source: `registry (${key})` };
