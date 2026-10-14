@@ -146,7 +146,9 @@ root entry and that matrix in step.
   `CHROME_PROFILE` reads `Default`; the missing-file error lists the profiles that have a
   `Bookmarks` file, sorted, skipping those without one, and says `none` when the Chrome directory
   is missing or no profile has bookmarks; an empty `CHROME_BOOKMARKS_PATH` falls back to the
-  profile.
+  profile. `test/unreadable-bookmarks.test.js` (unit): only a missing file (`ENOENT`) gets the
+  missing-file error; a directory (`EISDIR`) and a file without read permission (`EACCES`, skipped
+  on Windows and as root) each name their code and the path.
 - **Untested**: nothing known.
 
 ## Local index store

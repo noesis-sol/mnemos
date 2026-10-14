@@ -96,6 +96,20 @@ function unreadable(browser: Browser, file: string, error: unknown): Error {
       `macOS did not let mnemos read ${file}. Safari's bookmarks are readable only by apps ` +
       "with Full Disk Access: add the app that runs mnemos (your terminal or MCP client) in " +
       "System Settings › Privacy & Security › Full Disk Access, then restart it.";
+  } else if (code !== "ENOENT") {
+    // The file is there (or something else is in its way): saying it is
+    // missing would send the user looking for the wrong profile.
+    const reason =
+      code === "EISDIR"
+        ? "the path is a directory, not a file"
+        : code === "EACCES" || code === "EPERM"
+          ? "the file exists, but permission was denied. Check its permissions, and whether " +
+            "the app that runs mnemos (your terminal or MCP client, which may be sandboxed) " +
+            "may read it"
+          : error instanceof Error
+            ? error.message
+            : String(error);
+    return new Error(`Cannot read the bookmarks file at ${file} (${code ?? "error"}): ${reason}.`);
   } else if (browser === "safari" && process.platform !== "darwin") {
     message = `No bookmarks file at ${file}: Safari keeps its bookmarks only on macOS.`;
   } else if (browser === "safari") {
