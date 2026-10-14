@@ -702,27 +702,15 @@ interface PlacesRow {
   description: string | null;
 }
 
-let placesCache: { key: string; roots: Record<string, BookmarkNode> } | undefined;
-
 /**
  * The bookmark roots of a Firefox places.sqlite. Firefox keeps the database
  * open and locked while it runs, and recent writes sit in places.sqlite-wal,
  * so the database and its WAL are copied to a temporary directory and the
- * copy is read. The result is cached until either file changes.
+ * copy is read. lib.ts's sourceRoots() keeps the result until either file
+ * changes.
  */
 export function readFirefoxRoots(file: string): Record<string, BookmarkNode> {
   const wal = `${file}-wal`;
-  const stamp = (f: string) => {
-    try {
-      const s = fs.statSync(f);
-      return `${s.mtimeMs}:${s.size}`;
-    } catch {
-      return "-";
-    }
-  };
-  const key = `${file}\0${stamp(file)}\0${stamp(wal)}`;
-  if (placesCache?.key === key) return placesCache.roots;
-
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mnemos-places-"));
   try {
     const copy = path.join(dir, "places.sqlite");
@@ -737,9 +725,7 @@ export function readFirefoxRoots(file: string): Record<string, BookmarkNode> {
     } finally {
       db.close();
     }
-    const roots = placesTree(rows);
-    placesCache = { key, roots };
-    return roots;
+    return placesTree(rows);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

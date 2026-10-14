@@ -189,6 +189,7 @@ test("default: the detected browser in its last-used profile, labelled by its di
   const detect = () => ({ browser: "edge" });
   assert.deepEqual(selectSources({ detect }), {
     sources: [{ browser: "edge", profile: "Work (Profile 1)", bookmarks: file }],
+    prefixes: [""],
     failures: [],
     warnings: [],
     multi: false,
@@ -242,7 +243,7 @@ test("one browser that cannot be read stays an error, as before", () => {
   assert.throws(() => lib.listFolders(), /^Error: No bookmarks file at .*Edge profiles that have bookmarks: none/s);
 });
 
-test("all: every browser with bookmarks here, each in its default profile; none is an error", () => {
+test("all: every browser with bookmarks here; none is an error", () => {
   browsers.setStartupOptions({ browser: "all" });
   assert.throws(() => selectSources(), /No supported browser has bookmarks here \(--browser all\)/);
   const edge = makeProfile("edge", "Default", ["edge page", "https://edge.example/"]);

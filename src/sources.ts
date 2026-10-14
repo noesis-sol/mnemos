@@ -6,13 +6,17 @@
  *             profile --profile names, else the one it last used
  *   <id>      that browser, the same way
  *   <a>,<b>   each listed browser, in its default profile
- *   all       every browser with bookmarks here, in its default profile
+ *   all       every profile with bookmarks of every browser here, each
+ *             browser's default profile first
  *
  * MNEMOS_BOOKMARKS_PATH (or CHROME_BOOKMARKS_PATH) names the one file to read
  * instead. Every tool result reports the sources it read; with several, a
- * source that cannot be found or read is a warning, not an error.
+ * source that cannot be found or read is a warning, not an error, and each
+ * source's folder paths start with its browser's name, then its profile's
+ * when that browser has several sources ("Chrome › Work › Bookmarks Bar").
  */
 
+import fs from "node:fs";
 import path from "node:path";
 import {
   BROWSER_NAMES,
@@ -21,6 +25,7 @@ import {
   chromiumBase,
   chromiumBookmarksPath,
   chromiumLocalState,
+  chromiumProfiles,
   firefoxBase,
   firefoxPlacesPath,
   firefoxProfiles,
@@ -54,6 +59,12 @@ export interface SourceFailure {
 
 export interface Selection {
   sources: Source[];
+  /**
+   * Each source's folder path prefix, by index: "" for one browser, else its
+   * browser's name and, when it has several sources, its profile's
+   * ("Chrome › Work › "). See sourcePrefixes().
+   */
+  prefixes: string[];
   /** Browsers of a list (or of all) whose file could not be found; with one browser, that is thrown instead. */
   failures: SourceFailure[];
   /** Warnings for the result, such as the default browser's fallback when detection failed. */
@@ -83,13 +94,14 @@ export function selectSources(select: SelectOptions = {}): Selection {
   if (override) {
     if (multi) throw new Error("A bookmarks file set by MNEMOS_BOOKMARKS_PATH cannot be read with several browsers.");
     const browser = Array.isArray(selection) ? selection[0] : null;
-    return { sources: [{ browser, profile: null, bookmarks: override }], failures: [], warnings: [], multi };
+    return { sources: [{ browser, profile: null, bookmarks: override }], prefixes: [""], failures: [], warnings: [], multi };
   }
 
   if (selection === "default") {
     const found = (select.detect ?? defaultBrowser)();
     return {
       sources: [browserSource(found.browser, profile, platform, env)],
+      prefixes: [""],
       failures: [],
       warnings: found.warning ? [found.warning] : [],
       multi,
@@ -103,17 +115,88 @@ export function selectSources(select: SelectOptions = {}): Selection {
         "or set MNEMOS_BOOKMARKS_PATH to a bookmarks file.",
     );
   }
-  const sources: Source[] = [];
+  const sources: ProfileSource[] = [];
   const failures: SourceFailure[] = [];
   for (const browser of browsers) {
     try {
-      sources.push(browserSource(browser, multi ? undefined : profile, platform, env));
+      if (selection === "all") sources.push(...profileSources(browser, platform, env));
+      else sources.push({ source: browserSource(browser, multi ? undefined : profile, platform, env) });
     } catch (e) {
       if (!multi) throw e;
       failures.push({ browser, error: e instanceof Error ? e : new Error(String(e)) });
     }
   }
-  return { sources, failures, warnings: [], multi };
+  return {
+    sources: sources.map((s) => s.source),
+    prefixes: multi ? sourcePrefixes(sources) : sources.map(() => ""),
+    failures,
+    warnings: [],
+    multi,
+  };
+}
+
+/** A source, and the name its profile goes by in folder paths: the display name, else the directory's. */
+export interface ProfileSource {
+  source: Source;
+  name?: string;
+}
+
+/**
+ * Every profile of `browser` that has a bookmarks file, its default profile
+ * (the one it last used, or opens) first, the rest in the order the browser
+ * lists them. Throws when the browser has no bookmarks here.
+ */
+export function profileSources(
+  browser: Browser,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): ProfileSource[] {
+  if (browser === "safari") return [{ source: browserSource(browser, undefined, platform, env) }];
+  let found: ProfileSource[];
+  let first: string;
+  if (isFirefox(browser)) {
+    const profiles = firefoxProfiles(firefoxBase(browser, platform, env));
+    first = path.join((profiles.find((p) => p.isDefault) ?? profiles[0])?.dir ?? "", "places.sqlite");
+    found = profiles
+      .filter((p) => fs.existsSync(path.join(p.dir, "places.sqlite")))
+      .map((p) => ({
+        source: { browser, profile: profileLabel(p.name, path.basename(p.dir)), bookmarks: path.join(p.dir, "places.sqlite") },
+        name: p.name,
+      }));
+  } else if (isChromium(browser)) {
+    const base = chromiumBase(browser, platform, env);
+    const { names } = chromiumLocalState(base);
+    first = chromiumBookmarksPath(browser, undefined, platform, env);
+    found = chromiumProfiles(browser, platform, env).map((dir) => ({
+      source: browserSource(browser, dir, platform, env),
+      name: names[dir] ?? dir,
+    }));
+  } else {
+    throw new Error(`no reader for ${browser}`);
+  }
+  // The browser's own error: no profiles.ini, or no profile with bookmarks.
+  if (found.length === 0) return [{ source: browserSource(browser, undefined, platform, env) }];
+  const at = found.findIndex((p) => path.resolve(p.source.bookmarks) === path.resolve(first));
+  if (at > 0) found.unshift(...found.splice(at, 1));
+  return found;
+}
+
+/**
+ * The folder path prefix of each of several browsers' sources: the browser's
+ * name, then, for a browser with several sources, the profile's name, or its
+ * full label when another profile of that browser has the same name.
+ */
+function sourcePrefixes(sources: ProfileSource[]): string[] {
+  const count = (pick: (s: ProfileSource) => unknown, of: ProfileSource) =>
+    sources.filter((s) => s.source.browser === of.source.browser && pick(s) === pick(of)).length;
+  return sources.map((s) => {
+    const segments = [sourceName(s.source)];
+    if (count(() => true, s) > 1) {
+      const name = s.name ?? s.source.profile ?? "";
+      segments.push(count((o) => o.name ?? o.source.profile, s) > 1 ? (s.source.profile ?? name) : name);
+    }
+    return segments.map((segment) => `${segment}${SEP}`).join("");
+  });
 }
 
 /** The bookmarks file of `browser` in `profile` (its default profile when unset), and the profile's label. */
@@ -139,6 +222,9 @@ export function browserSource(
   const dir = path.dirname(bookmarks) === base ? "Default" : path.basename(path.dirname(bookmarks));
   return { browser, profile: profileLabel(chromiumLocalState(base).names[dir], dir), bookmarks };
 }
+
+/** Path segments are joined with this — "/" can appear in folder names. */
+export const SEP = " › ";
 
 /** How results and warnings name a source: "Firefox", or "the bookmarks file" for one named by path. */
 export function sourceName(source: Pick<Source, "browser">): string {

@@ -11,7 +11,9 @@
  * Every tool result carries `sources`, the bookmarks files it read, and
  * `warnings` when some selected source could not be read. With several
  * browsers selected, each bookmark's folder path starts with its browser's
- * name ("Firefox › Bookmarks Toolbar › …").
+ * name ("Firefox › Bookmarks Toolbar › …"), then its profile's when that
+ * browser has several (--browser all: "Chrome › Work › Bookmarks Bar").
+ * Parsed bookmarks files are kept until they change (sourceRoots()).
  */
 
 import fs from "node:fs";
@@ -35,7 +37,7 @@ import {
   type StartupOptions,
 } from "./browsers.js";
 import { isBinaryPlist } from "./plist.js";
-import { selectSources, sourceName, type SelectOptions, type Source } from "./sources.js";
+import { SEP, selectSources, sourceName, type SelectOptions, type Source } from "./sources.js";
 
 export interface BookmarkNode {
   type?: string;
@@ -56,8 +58,7 @@ export interface Entry {
   node: BookmarkNode;
 }
 
-/** Path segments are joined with this — "/" can appear in folder names. */
-export const SEP = " › ";
+export { SEP };
 
 export function chromeBase(
   platform: NodeJS.Platform = process.platform,
@@ -162,14 +163,45 @@ export function loadRoots(): Record<string, BookmarkNode> {
   return sourceRoots(sources[0]);
 }
 
+/** The parsed bookmarks files, by path: their roots, and the stamp of the files they were read from. */
+const parsed = new Map<string, { stamp: string; roots: Record<string, BookmarkNode> }>();
+
+/**
+ * A file's modification time, size and inode, or "-" when it cannot be
+ * stat'ed. Chromium and Safari replace their file to write it, and Firefox's
+ * recent writes land in places.sqlite-wal, which is stamped with it.
+ */
+function stamp(file: string): string {
+  try {
+    const s = fs.statSync(file);
+    return `${s.mtimeMs}:${s.size}:${s.ino}`;
+  } catch {
+    return "-";
+  }
+}
+
 /**
  * The root folders of a source's bookmarks file, keyed by root name. The
  * file's format is read from its first bytes, so MNEMOS_BOOKMARKS_PATH can
- * point at any supported browser's file: Chromium JSON, Firefox's
- * places.sqlite or Safari's binary Bookmarks.plist. `others`: a missing file's
- * error also names the other browsers with bookmarks.
+ * point at any supported browser's file: Chromium JSON ('{'), Firefox's
+ * places.sqlite ('SQLite format 3\0') or Safari's binary Bookmarks.plist
+ * ('bplist00'). `others`: a missing file's error also names the other browsers
+ * with bookmarks. The roots are kept, and returned again (the same object, not
+ * to be changed), until the file's modification time or size changes; a file
+ * that cannot be read is read again on every call.
  */
 export function sourceRoots(source: Source, others = true): Record<string, BookmarkNode> {
+  const file = source.bookmarks;
+  // Stamped before reading: a write in between is read now and noticed next time.
+  const now = `${stamp(file)}\0${stamp(`${file}-wal`)}`;
+  const kept = parsed.get(file);
+  if (kept?.stamp === now) return kept.roots;
+  const roots = parseRoots(source, others);
+  parsed.set(file, { stamp: now, roots });
+  return roots;
+}
+
+function parseRoots(source: Source, others: boolean): Record<string, BookmarkNode> {
   const browser: Browser = source.browser ?? "chrome";
   const file = source.bookmarks;
   let head: Buffer;
@@ -195,12 +227,22 @@ export function sourceRoots(source: Source, others = true): Record<string, Bookm
   // Chromium JSON. A bookmarks file read through MNEMOS_BOOKMARKS_PATH is
   // named after the selected browser, which is Chrome unless set otherwise.
   const name = isChromium(browser) ? BROWSER_NAMES[browser] : "The browser";
-  let parsed: unknown;
+  let json: unknown;
+  // A leading byte order mark, which Windows editors write, is not JSON;
+  // Chrome never writes one, so it is dropped rather than read as mid-write.
+  const text = data.toString("utf-8").replace(/^\uFEFF/, "");
   try {
-    // A leading byte order mark, which Windows editors write, is not JSON;
-    // Chrome never writes one, so it is dropped rather than read as mid-write.
-    parsed = JSON.parse(data.toString("utf-8").replace(/^\uFEFF/, ""));
+    json = JSON.parse(text);
   } catch (e) {
+    // Not even the start of a JSON object: a file of some other kind, which
+    // retrying will not fix. An empty file may be one being written.
+    if (text.trim() && !text.trimStart().startsWith("{")) {
+      throw new Error(
+        `File at ${file} is not a bookmarks file mnemos can read: it is neither a Chromium ` +
+          "Bookmarks file (JSON), Firefox's places.sqlite (SQLite) nor Safari's Bookmarks.plist " +
+          `(binary property list). Point ${PATH_ENV} at one of those.`,
+      );
+    }
     throw new Error(
       `Bookmarks file at ${file} is not valid JSON (${e}). ` +
         `${name} may be mid-write; retry in a moment.`,
@@ -211,7 +253,7 @@ export function sourceRoots(source: Source, others = true): Record<string, Bookm
   // has roots.{bookmark_bar,other,synced}, each a folder node with a children
   // array — even on a brand-new profile — so requiring one such node
   // distinguishes a foreign file from a genuinely empty one.
-  const roots = isRecord(parsed) ? parsed.roots : undefined;
+  const roots = isRecord(json) ? json.roots : undefined;
   const looksLikeChrome =
     isRecord(roots) && Object.values(roots).some((r) => isRecord(r) && Array.isArray(r.children));
   if (!looksLikeChrome) {
@@ -328,8 +370,8 @@ const ROOT_LABELS: Record<string, string> = {
 
 /** The selected sources' bookmarks, read once for a tool call. */
 export interface Bookmarks {
-  /** Each source that could be read, with its root folders. */
-  read: { source: Source; roots: Record<string, BookmarkNode> }[];
+  /** Each source that could be read, with its root folders and its folder path prefix (sources.ts). */
+  read: { source: Source; roots: Record<string, BookmarkNode>; prefix: string }[];
   /** Several browsers are selected: folder paths start with the browser's name. */
   multi: boolean;
   /** What the tool result reports. */
@@ -352,14 +394,15 @@ export function readBookmarks(select?: SelectOptions): Bookmarks {
   const warnings = [...selection.warnings];
   for (const { browser, error } of selection.failures) warnings.push(`${BROWSER_NAMES[browser]}: ${error.message}`);
   const read: Bookmarks["read"] = [];
-  for (const source of selection.sources) {
+  selection.sources.forEach((source, i) => {
+    const prefix = selection.prefixes[i];
     try {
-      read.push({ source, roots: sourceRoots(source, !selection.multi) });
+      read.push({ source, roots: sourceRoots(source, !selection.multi), prefix });
     } catch (e) {
       if (!selection.multi) throw e;
-      warnings.push(`${sourceName(source)}: ${e instanceof Error ? e.message : String(e)}`);
+      warnings.push(`${sourceLabel(source, prefix)}: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }
+  });
   if (read.length === 0) {
     throw new Error(`None of the selected browsers' bookmarks could be read. ${warnings.join(" ")}`);
   }
@@ -370,9 +413,9 @@ export function readBookmarks(select?: SelectOptions): Bookmarks {
   };
 }
 
-/** The folder path prefix of a source's bookmarks: its browser's name when several are selected. */
-export function sourcePrefix(source: Source, multi: boolean): string {
-  return multi ? `${sourceName(source)}${SEP}` : "";
+/** How warnings name a source: its folder path prefix ("Chrome › Work"), else its browser's name. */
+export function sourceLabel(source: Source, prefix: string): string {
+  return prefix ? prefix.slice(0, -SEP.length) : sourceName(source);
 }
 
 /** A traversal of root folders, each root's label after `prefix`. */
@@ -390,7 +433,7 @@ export function* walkRoots(roots: Record<string, BookmarkNode>, prefix = ""): Ge
 
 /** Every selected source's folders and bookmarks; `bookmarks` defaults to reading them now. */
 export function* walkAll(bookmarks: Bookmarks = readBookmarks()): Generator<Visit> {
-  for (const { source, roots } of bookmarks.read) yield* walkRoots(roots, sourcePrefix(source, bookmarks.multi));
+  for (const { roots, prefix } of bookmarks.read) yield* walkRoots(roots, prefix);
 }
 
 export function* allBookmarks(bookmarks?: Bookmarks): Generator<Entry> {
@@ -631,20 +674,34 @@ export function recentBookmarks(limit?: number): unknown {
 
 export function topDomains(limit?: number): unknown {
   const bookmarks = readBookmarks();
-  const counts = new Map<string, number>();
-  for (const entry of allBookmarks(bookmarks)) {
-    let host = "";
-    try {
-      const url = new URL(entry.node.url ?? "");
-      // Only web pages count as "sources" — skip chrome://, file://, etc.
-      if (url.protocol !== "http:" && url.protocol !== "https:") continue;
-      // Render internationalized domains readably, not as xn-- punycode.
-      host = domainToUnicode(url.hostname.replace(/^www\./, ""));
-    } catch {
-      continue; // bookmarklets and malformed URLs
+  // A URL saved in several sources (the same page in Chrome and Firefox, or
+  // in two profiles) is one bookmark: it counts as often as the source that
+  // holds it most times, not once per source.
+  const saved = new Map<string, { host: string; times: number }>();
+  for (const { roots } of bookmarks.read) {
+    const here = new Map<string, number>();
+    for (const entry of rootBookmarks(roots)) {
+      const href = entry.node.url ?? "";
+      if (!saved.has(href)) {
+        let host = "";
+        try {
+          const url = new URL(href);
+          // Only web pages count as "sources" — skip chrome://, file://, etc.
+          if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+          // Render internationalized domains readably, not as xn-- punycode.
+          host = domainToUnicode(url.hostname.replace(/^www\./, ""));
+        } catch {
+          continue; // bookmarklets and malformed URLs
+        }
+        if (!host) continue;
+        saved.set(href, { host, times: 0 });
+      }
+      here.set(href, (here.get(href) ?? 0) + 1);
     }
-    if (host) counts.set(host, (counts.get(host) ?? 0) + 1);
+    for (const [href, n] of here) saved.get(href)!.times = Math.max(saved.get(href)!.times, n);
   }
+  const counts = new Map<string, number>();
+  for (const { host, times } of saved.values()) counts.set(host, (counts.get(host) ?? 0) + times);
   const top = [...counts.entries()]
     .sort(([, a], [, b]) => b - a)
     .slice(0, cap(limit, 25, 100))

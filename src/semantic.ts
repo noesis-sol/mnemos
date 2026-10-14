@@ -20,7 +20,9 @@
  * against every index; the candidates of all sources are then ranked as one
  * library: one cutoff, from the median of all their titles' scores, and
  * keyword hits first. A source whose index is not open yet contributes its
- * keyword hits only. The status adds the sources' progress and page counts up.
+ * keyword hits only. A URL saved in several sources is one result, the
+ * best-ranked of its bookmarks. The status adds the sources' progress and page
+ * counts up.
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
@@ -28,7 +30,7 @@ import { fetchingDisabled, type Fetcher } from "./fetcher.js";
 import { bookmarkRows, type Indexer, type IndexerStatus, type IndexScores } from "./indexer.js";
 import * as lib from "./lib.js";
 import type { SourceIndex } from "./source-indexes.js";
-import { sourceName, type Source } from "./sources.js";
+import type { Source } from "./sources.js";
 
 export const DEFAULT_LIMIT = 20;
 export const MAX_LIMIT = 100;
@@ -195,13 +197,13 @@ export async function semanticSearch(
   };
   // Each source read: its bookmarks as its index keys them (folder paths with
   // no browser prefix), the prefix results show, and its index.
-  const parts = bookmarks.read.map(({ source, roots }) => {
+  const parts = bookmarks.read.map(({ source, roots, prefix }) => {
     const entries = [...lib.rootBookmarks(roots)];
     return {
       source,
       entries,
       guids: bookmarkRows(entries).map((row) => row.guid),
-      prefix: lib.sourcePrefix(source, bookmarks.multi),
+      prefix,
       index: indexOf(source),
     };
   });
@@ -234,8 +236,8 @@ export async function semanticSearch(
     }
   }
 
-  const candidates: { entry: lib.Entry; keyword: boolean; score: number | null; page?: string }[] = [];
-  for (const part of parts) {
+  const candidates: { entry: lib.Entry; part: number; keyword: boolean; score: number | null; page?: string }[] = [];
+  for (const [at, part] of parts.entries()) {
     const scores = scored.get(part.index);
     part.entries.forEach((local, i) => {
       const entry = { folder: part.prefix + local.folder, node: local.node };
@@ -244,9 +246,9 @@ export async function semanticSearch(
       const title = scores?.titles.get(part.guids[i]);
       const page = scores?.pages.get(entry.node.url ?? "");
       if (page !== undefined && (title === undefined || page.score > title)) {
-        candidates.push({ entry, keyword, score: page.score, page: page.text });
+        candidates.push({ entry, part: at, keyword, score: page.score, page: page.text });
       } else {
-        candidates.push({ entry, keyword, score: title ?? null });
+        candidates.push({ entry, part: at, keyword, score: title ?? null });
       }
     });
   }
@@ -265,6 +267,14 @@ export async function semanticSearch(
     // Keyword hits first; each group by score, unscored last. sort() is stable.
     hits.sort((a, b) => Number(b.keyword) - Number(a.keyword) || (b.score ?? -Infinity) - (a.score ?? -Infinity));
   }
+  // A URL in several sources is returned once, from the source of its
+  // best-ranked bookmark; one source's own repeats of it stay, as with one source.
+  const taken = new Map<string, number>();
+  hits = hits.filter((hit) => {
+    const url = hit.entry.node.url ?? "";
+    if (!taken.has(url)) taken.set(url, hit.part);
+    return taken.get(url) === hit.part;
+  });
 
   const results = hits.slice(0, lib.cap(limit, DEFAULT_LIMIT, MAX_LIMIT)).map((hit) => {
     let matched_on: MatchedOn = hit.page !== undefined ? "page" : "title";
@@ -316,7 +326,10 @@ export async function semanticSearch(
     new Set(fetching).size <= 1
       ? fetching[0]
       : fetchers
-          .map(({ index }, i) => `${sourceName(parts.find((part) => part.index === index)!.source)}: ${fetching[i]}`)
+          .map(({ index }, i) => {
+            const part = parts.find((p) => p.index === index)!;
+            return `${lib.sourceLabel(part.source, part.prefix)}: ${fetching[i]}`;
+          })
           .join("; ");
   const browser = fetchers.map(({ fetcher }) => fetcher.browserNote()).find((n) => n !== undefined);
   const status = {

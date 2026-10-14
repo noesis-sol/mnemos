@@ -13,7 +13,8 @@
  *
  * Environment variables:
  *   MNEMOS_BOOKMARKS_BROWSER default (the system default browser; the
- *                            default), all (every browser with bookmarks),
+ *                            default), all (every profile of every browser
+ *                            with bookmarks),
  *                            or one or more of chrome, chrome-beta,
  *                            chrome-dev, chrome-canary, chromium, edge, brave,
  *                            vivaldi, opera, firefox, librewolf, waterfox,
@@ -112,8 +113,9 @@ const server = new McpServer(
       "to see which sources they trust, and recent_bookmarks to see what they " +
       "are currently focused on. Every result has `sources`, the browsers, " +
       "profiles and bookmarks files it read; when several browsers are read, " +
-      "folder paths start with the browser's name. `warnings`, when present, " +
-      "name browsers whose bookmarks could not be read, so the result may be " +
+      "folder paths start with the browser's name, then the profile's when a " +
+      "browser is read in several profiles. `warnings`, when present, " +
+      "name browsers or profiles whose bookmarks could not be read, so the result may be " +
       "incomplete: tell the user.",
   },
 );

@@ -48,9 +48,9 @@ flowchart LR
 The keyword tools read your browser's bookmarks directly from disk on every
 call — always fresh, no sync. Chromium-based browsers keep a `Bookmarks`
 JSON file; Firefox keeps a `places.sqlite` database, which it locks while it runs,
-so mnemos copies it to a temporary directory, reads the copy and keeps the result
-in memory until the database changes; Safari keeps a binary `Bookmarks.plist`.
-mnemos never writes to any of them. It speaks MCP over stdio, so it works with
+so mnemos copies it to a temporary directory and reads the copy; Safari keeps a
+binary `Bookmarks.plist`. mnemos keeps each file it has read in memory until the
+file's modification time or size changes, and never writes to any of them. It speaks MCP over stdio, so it works with
 any MCP client.
 
 `semantic_search` reads a local index that mnemos builds in the background,
@@ -91,8 +91,11 @@ Every result carries `sources`, the bookmarks it read — `[{ "browser": "edge",
 "profile": "Work (Profile 1)", "bookmarks": "<path to the file>" }]` — and, when
 mnemos reads several browsers and one of them cannot be read, `warnings` saying
 which and why; the others are still searched. With several browsers, folder
-paths start with the browser's name (`Firefox › Bookmarks Toolbar › …`), and
-the `folder` filters match it.
+paths start with the browser's name (`Firefox › Bookmarks Toolbar › …`), then,
+for a browser read in several profiles (`--browser all`), the profile's
+(`Chrome › Work › Bookmarks Bar › …`); the `folder` filters match both. A page
+saved in several browsers or profiles counts once in `top_domains` and is one
+result in `semantic_search`.
 
 Every tool that can truncate reports a `total_matches` count (`semantic_search`:
 `count_above_threshold`), so the assistant always knows when it is looking at a
@@ -164,7 +167,7 @@ variable:
 
 | Flag | Environment variable | Default | Purpose |
 |------|----------------------|---------|---------|
-| `--browser <ids>` | `MNEMOS_BOOKMARKS_BROWSER` | `default` | Browsers to read: `default` (your system's default browser), `all` (every browser with bookmarks on this machine), or one or more of `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `librewolf`, `waterfox`, `zen`, `floorp`, `tor-browser` and `safari`, separated by commas |
+| `--browser <ids>` | `MNEMOS_BOOKMARKS_BROWSER` | `default` | Browsers to read: `default` (your system's default browser), `all` (every profile of every browser with bookmarks on this machine), or one or more of `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox`, `librewolf`, `waterfox`, `zen`, `floorp`, `tor-browser` and `safari`, separated by commas |
 | `--profile <name>` | `MNEMOS_PROFILE` | the profile the browser opens | Profile name as the browser shows it (e.g. `Work`, any case) or its directory (e.g. `Profile 3`), for one browser only. `CHROME_PROFILE` is an older name for the variable |
 
 For example:
@@ -182,11 +185,17 @@ or in Claude Desktop's config, `"args": ["-y", "mnemos-mcp", "--browser", "edge"
   bookmarks and each result's `warnings` says so; if the default browser is one
   mnemos cannot read (Arc, say), the tools say which it is and how to choose
   another, rather than reading a different browser's bookmarks.
-- **A list or `all`** reads each browser in its default profile (the one it
-  last used), so `--profile` cannot be combined with them. A browser in the
-  list that has no bookmarks here, or cannot be read, is a warning, not an
-  error. `all` puts the bookmarks of every browser — work and personal ones
-  alike — into one context; choose browsers with `--browser` to keep them apart.
+- **A list** reads each browser in its default profile (the one it last
+  used); **`all`** reads every profile that has bookmarks, of every browser
+  here. `--profile` cannot be combined with either. A browser or profile that
+  cannot be read — Safari without Full Disk Access, a damaged file — is a
+  warning, not an error, and the rest are still read.
+- **`all` merges work and personal bookmarks.** It puts every browser's and
+  every profile's bookmarks — your work profile's and your personal one's
+  alike — into one context, which your assistant, and the service behind it,
+  sees whole. It is never the default. To keep them apart, name the browser
+  with `--browser` and the profile with `--profile` (or run one mnemos per
+  profile).
 - **Upgrading from 0.3**: the default used to be Chrome. If you set
   `CHROME_PROFILE` or `CHROME_BOOKMARKS_PATH` and no browser, mnemos still reads
   Chrome; otherwise add `--browser chrome` to keep reading Chrome.
@@ -197,7 +206,7 @@ log.
 
 | Environment variable | Default | Purpose |
 |----------------------|---------|---------|
-| `MNEMOS_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`); overrides the browser and profile, and cannot be combined with several browsers. `CHROME_BOOKMARKS_PATH` is an older name for it |
+| `MNEMOS_BOOKMARKS_PATH` | — | Absolute path to any supported bookmarks file (`Bookmarks`, `places.sqlite` or `Bookmarks.plist`, whatever it is called: mnemos tells them apart by their first bytes); overrides the browser and profile, and cannot be combined with several browsers. `CHROME_BOOKMARKS_PATH` is an older name for it |
 | `MNEMOS_CACHE_DIR` | your OS cache directory | Where mnemos keeps its index, model and embedding runtime (see [Cache](#cache)) |
 | `MNEMOS_INSTALL_RUNTIME` | — | `0` keeps mnemos from installing its embedding runtime on first start; `semantic_search` then matches keywords only |
 | `MNEMOS_FETCH_PAGES` | — | `0` turns off fetching bookmarked pages; `semantic_search` then uses titles only |
@@ -379,9 +388,13 @@ Every plain fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
   mnemos writes only temporary copies of Firefox's database and the headless
   browser's throwaway profile, and npm keeps the runtime's packages in your
   own npm cache (`~/.npm` by default; `npm cache clean --force` empties it).
-- **Fresh.** The keyword tools re-read the bookmarks file on every call
-  (Firefox's whenever it has changed); `semantic_search` re-syncs the index
-  when it finds the file has changed.
+- **Fresh.** The keyword tools re-read the bookmarks file on every call that
+  finds it changed (its modification time or size); `semantic_search` re-syncs
+  the index when it finds the file has changed.
+- **One context.** Everything mnemos reads goes to your MCP client together:
+  with `--browser all`, that is every browser's and every profile's bookmarks,
+  work and personal alike. Choose with `--browser` and `--profile` what it may
+  read.
 - **Auditable.** [`src/index.ts`](src/index.ts) is the MCP wiring,
   [`src/lib.ts`](src/lib.ts) the keyword tools, [`src/semantic.ts`](src/semantic.ts)
   semantic search, and [`src/fetch.ts`](src/fetch.ts) the whole fetch policy.

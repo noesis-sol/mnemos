@@ -306,6 +306,28 @@ root entry and that matrix in step.
   tested in `test/default-browser.test.js`); several fetchers at once against real sites.
 - **Tickets**: mnemos-5ij.5
 
+## --browser all over every profile
+
+- **Reached by**: `--browser all` (`sources.profileSources`, the `prefixes` of
+  `sources.selectSources`); `lib.readBookmarks` (warnings named by prefix); `lib.topDomains` and
+  `semantic.ts` counting a URL in several sources once; `lib.sourceRoots` sniffing the format of
+  any file (`MNEMOS_BOOKMARKS_PATH`) and keeping each parsed file until its mtime, size or inode,
+  or Firefox's WAL's, change.
+- **Tests**: `test/browser-all.test.js` (unit, a fake home; and e2e over MCP): every Chromium and
+  Firefox profile with bookmarks, the default first, the profile in the prefix only when a
+  browser has several and its directory when two share a name, the folder filters matching it, a
+  list still reading default profiles; Opera's root-level file beside its profiles; a damaged
+  Chrome profile and a Firefox profile holding no database as warnings in every keyword tool;
+  Safari without read permission (macOS, not as root) as a warning; `top_domains` counting a URL
+  in several sources once and one source's repeats as before; `semantic_search` returning a
+  shared URL once, semantic and keyword-only; JSON, SQLite and binary plist files read by their
+  first bytes whatever their names, an unknown format named as such, a cut-off or empty file
+  still mid-write; the cache returning the same parse for an unchanged file, re-reading after a
+  change of size or of mtime alone, never keeping an error, and Firefox re-read when its WAL
+  changes; over MCP, `--browser all` with two Chrome profiles.
+- **Untested**: real multi-profile installs; a Firefox database locked by a running Firefox.
+- **Tickets**: mnemos-5ij.6
+
 ## Page fetch policy and safe fetch
 
 - **Reached by**: the background page fetcher (`src/fetcher.ts`, see Background page fetching);
