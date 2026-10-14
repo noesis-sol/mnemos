@@ -304,7 +304,8 @@ their readable text (extracted with Mozilla's Readability; a PDF's with pdf.js)
 in its local index ([`src/fetcher.ts`](src/fetcher.ts)). The first
 `semantic_search` answer after it starts says so once. New bookmarks go first,
 newest first, at most 4 fetches at a time, one at a time per site with a second
-between them. When several MCP clients each run mnemos, only one of them
+between them, over all the browsers mnemos reads; a page saved in several of
+them is fetched once. When several MCP clients each run mnemos, only one of them
 fetches. Set `MNEMOS_FETCH_PAGES=0` to turn all of it off.
 
 The index stays fresh on its own:

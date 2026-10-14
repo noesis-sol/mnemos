@@ -303,7 +303,8 @@ root entry and that matrix in step.
   index; over MCP, every tool's `sources` and `warnings` with a list, one source and no warnings
   with one browser, the instructions naming both, and `--profile` with a list stopping the server.
 - **Untested**: `default` detected for real in a spawned server (the detection commands are
-  tested in `test/default-browser.test.js`); several fetchers at once against real sites.
+  tested in `test/default-browser.test.js`); several fetchers at once against real sites (their
+  shared pool is tested with a fake fetch in `test/fetch-pool.test.js`; see Background page fetching).
 - **Tickets**: mnemos-5ij.5
 
 ## --browser all over every profile
@@ -554,7 +555,9 @@ root entry and that matrix in step.
   pass is done (`indexer.idle()`), and `Fetcher.stop()` on stdin's end, SIGTERM or SIGINT;
   `src/fetcher.ts` (`Fetcher`, `pageResult`, `backoffMs`, `domainKey`), `src/extract.ts`
   (`extractPage`, `isLoginUrl`, `Extractor`) and `src/extract-worker.ts`. Only the process holding the store's `fetcher` lease (30 s, renewed every 10 s)
-  fetches. It adds a pending page per http(s) bookmark URL, applies `MNEMOS_SKIP_DOMAINS` and
+  fetches. The fetchers of every selected bookmarks file share one `FetchPool` (`src/index.ts`),
+  so the limits below hold over all of them, and a page another file's index fetched within a
+  day is taken from it, not fetched again. It adds a pending page per http(s) bookmark URL, applies `MNEMOS_SKIP_DOMAINS` and
   `MNEMOS_SKIP_FOLDERS` to every page (dropping a newly skipped page's text and chunks), and
   fetches pending and due pages with `safeFetch` (PDFs read too; see PDF bookmarks), pages
   never fetched before refreshes and retries, newest bookmark first, 4 at a time, one per domain with 1 s between. Readability on a linkedom
@@ -586,7 +589,13 @@ root entry and that matrix in step.
   page; the store's version 1 to 2 migration, `addPendingPages`, `duePages`, `addMeta` and
   `takeMeta`. `test/fetch-queue-order.test.js`: `duePages` lists pending pages first; a `Fetcher`
   fetches never-fetched bookmarks before the refreshes and retries due, and a bookmark added
-  while refreshes drain at the next heartbeat. `test/semantic-page-states.test.js` (in process,
+  while refreshes drain at the next heartbeat. `test/fetch-pool.test.js`: two `Fetcher`s (two
+  bookmarks files) on one `FetchPool` with a fake fetch: at most the pool's fetches at once over
+  both, one per domain with the gap across them, a fetcher started later served before the
+  first's queue drains, a URL in both files fetched once and the second index taking its text
+  (`adoptedRow`: fresh, newer than its own fetch, failures backing off from its own count,
+  `needs_browser` and skip-list skips not taken); without a pool each keeps its own limits.
+  `test/semantic-page-states.test.js` (in process,
   fake embedder): `status.page_states` is empty until the index is open and has pages, then
   counts each state as the fetcher's store changes it. `e2e/semantic.e2e.js` (see Suites): the
   installed package with the real model brings every kind of page to its final state, and never
@@ -594,7 +603,7 @@ root entry and that matrix in step.
 - **Untested**: the lease lapsing while a holder still runs (another process taking it over
   mid-fetch); real websites; the worker dying mid-page.
 - **Tickets**: mnemos-tc4.9; mnemos-dbz (new bookmarks before refreshes); mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
-  mnemos-tc4.5 (`no_content` pages through a headless browser)
+  mnemos-tc4.5 (`no_content` pages through a headless browser); mnemos-nma (one pool over every source's fetcher)
 
 ## Index freshness
 

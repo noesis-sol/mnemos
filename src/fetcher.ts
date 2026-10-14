@@ -25,6 +25,12 @@
  * loop between steps, and an error is recorded on its page (failed, retried
  * with backoff) rather than thrown; nothing here throws into a tool call.
  *
+ * Polite over every source: the fetchers of the selected bookmarks files (one
+ * each) share a FetchPool, so these limits hold over all of them together, and
+ * a freed slot goes to the fetcher with the fewest fetches in flight. A page
+ * another source's fetcher fetched within SHARED_FRESH_MS (a URL saved in
+ * several browsers) is taken from that fetcher's index, not fetched again.
+ *
  * A page that comes back with no readable text (a JavaScript shell) is marked
  * needs_browser and loaded again in a headless browser (headless.ts), at most
  * BROWSER_PAGES at a time, under the same per-domain rules. The browser is
@@ -73,6 +79,8 @@ export const BACKOFF_MAX_MS = BACKOFF_STEPS_MS[BACKOFF_STEPS_MS.length - 1];
  * makes those due at once).
  */
 export const REFRESH_MS = 30 * DAY_MS;
+/** A page another source's fetcher fetched this recently is taken from its index, not fetched again. */
+export const SHARED_FRESH_MS = DAY_MS;
 
 /** Shown once per index, on the first semantic_search answer after fetching starts. */
 export const FIRST_FETCH_NOTE =
@@ -200,6 +208,148 @@ export function pageResult(
   }
 }
 
+/**
+ * This source's page row from the row another source's index has for the
+ * same URL, when that one was fetched within SHARED_FRESH_MS and after this
+ * source's last fetch of it; undefined when the page must be fetched here.
+ * `browser`: this source's page waits for the browser, so another's
+ * needs_browser is no answer.
+ */
+export function adoptedRow(
+  theirs: Required<PageRow>,
+  previous: Required<PageRow>,
+  browser: boolean,
+  now: number,
+): PageRow | undefined {
+  const at = theirs.fetched_at;
+  if (at === null || now - at > SHARED_FRESH_MS) return undefined;
+  if (previous.fetched_at !== null && at <= previous.fetched_at) return undefined;
+  const row: PageRow = {
+    url: previous.url,
+    status: theirs.status,
+    final_url: theirs.final_url,
+    fetched_at: at,
+    fail_count: 0,
+    next_attempt_at: theirs.next_attempt_at,
+    content_hash: theirs.content_hash,
+    reason: theirs.reason,
+    text: theirs.text,
+  };
+  switch (theirs.status) {
+    case "ok":
+    case "no_content":
+    case "needs_login":
+      return row;
+    case "skipped":
+      // A skip list's skip is this source's own to apply (its folders differ); the fetch's own is shared.
+      if (theirs.next_attempt_at === null || (theirs.reason !== null && CONFIG_SKIPS.has(theirs.reason))) return undefined;
+      return row;
+    case "needs_browser":
+      return browser ? undefined : { ...row, fail_count: previous.fail_count, next_attempt_at: null };
+    case "failed": {
+      const fails = previous.fail_count + 1;
+      return { ...row, fail_count: fails, next_attempt_at: Math.max(theirs.next_attempt_at ?? 0, at + backoffMs(fails)) };
+    }
+    default:
+      return undefined;
+  }
+}
+
+// --- the pool ----------------------------------------------------------------
+
+export interface FetchPoolOptions {
+  /** Fetches in flight at once, over every fetcher; defaults to CONCURRENCY. */
+  concurrency?: number;
+  domainGapMs?: number;
+  /** Pages in a browser at once, over every fetcher; defaults to BROWSER_PAGES. */
+  browserPages?: number;
+}
+
+/**
+ * What the fetchers of several bookmarks files share, so their politeness
+ * holds over all of them: the fetches in flight, the domains being fetched
+ * and when each was last, and the pages in a browser. Also the way to the
+ * others' indexes, for a page one of them fetched lately.
+ */
+export class FetchPool {
+  readonly concurrency: number;
+  readonly domainGapMs: number;
+  readonly browserPages: number;
+  private active = 0;
+  private browserActive = 0;
+  private readonly busyDomains = new Set<string>();
+  /** When the last request to each domain ended. */
+  private readonly lastDone = new Map<string, number>();
+  /** The started fetchers. */
+  private readonly members = new Set<Fetcher>();
+
+  constructor(options: FetchPoolOptions = {}) {
+    this.concurrency = options.concurrency ?? CONCURRENCY;
+    this.domainGapMs = options.domainGapMs ?? DOMAIN_GAP_MS;
+    this.browserPages = options.browserPages ?? BROWSER_PAGES;
+  }
+
+  join(fetcher: Fetcher): void {
+    this.members.add(fetcher);
+  }
+
+  leave(fetcher: Fetcher): void {
+    this.members.delete(fetcher);
+  }
+
+  /** Whether another fetch may start. */
+  hasRoom(): boolean {
+    return this.active < this.concurrency;
+  }
+
+  /**
+   * How long until a request to `domain` may start: 0 now, Infinity while
+   * one is in flight (or, for a browser page, while the browser is full).
+   */
+  waitMs(domain: string, browser: boolean, now: number): number {
+    if (this.busyDomains.has(domain)) return Infinity;
+    if (browser && this.browserActive >= this.browserPages) return Infinity;
+    return Math.max(0, (this.lastDone.get(domain) ?? -Infinity) + this.domainGapMs - now);
+  }
+
+  take(domain: string, browser: boolean): void {
+    this.active++;
+    this.busyDomains.add(domain);
+    if (browser) this.browserActive++;
+  }
+
+  release(domain: string, browser: boolean, now: number): void {
+    this.active--;
+    this.busyDomains.delete(domain);
+    this.lastDone.set(domain, now);
+    if (browser) this.browserActive--;
+  }
+
+  /**
+   * After `from`'s fetch ended: lets the fetchers with pages waiting start
+   * theirs, the one with the fewest in flight first (`from` last among
+   * equals), so one source's long queue does not hold every slot.
+   */
+  dispatch(from: Fetcher): void {
+    const order = [...this.members]
+      .filter((member) => member === from || member.hasQueue())
+      .sort((a, b) => a.inFlight() - b.inFlight() || Number(a === from) - Number(b === from));
+    if (!order.includes(from)) order.push(from);
+    for (const member of order) member.poke();
+  }
+
+  /** The freshest row another fetcher's index has for `url`, if any. */
+  sharedPage(url: string, from: Fetcher): Required<PageRow> | undefined {
+    let best: Required<PageRow> | undefined;
+    for (const member of this.members) {
+      if (member === from) continue;
+      const row = member.storedPage(url);
+      if (row?.fetched_at != null && (best?.fetched_at == null || row.fetched_at > best.fetched_at)) best = row;
+    }
+    return best;
+  }
+}
+
 // --- the fetcher -------------------------------------------------------------
 
 export type FetchFn = (url: string, options: FetchOptions) => Promise<FetchOutcome>;
@@ -229,6 +379,11 @@ export interface FetcherOptions {
   fetch?: FetchFn;
   /** Passed to every fetch (a test's CA, timeouts). */
   fetchOptions?: Omit<FetchOptions, "signal" | "folder" | "config">;
+  /**
+   * Shared with the fetchers of the other selected bookmarks files; when
+   * given, `concurrency`, `browserPages` and `domainGapMs` are the pool's.
+   */
+  pool?: FetchPool;
   concurrency?: number;
   /** Renders pages that need a browser; defaults to a HeadlessBrowser on `env`. */
   renderer?: PageRenderer;
@@ -272,10 +427,8 @@ export class Fetcher {
   private readonly dir: string | undefined;
   private readonly fetch: FetchFn;
   private readonly fetchOptions: FetcherOptions["fetchOptions"];
-  private readonly concurrency: number;
+  private readonly pool: FetchPool;
   private readonly renderer: PageRenderer;
-  private readonly browserPages: number;
-  private readonly domainGapMs: number;
   private readonly leaseTtlMs: number;
   private readonly heartbeatMs: number;
   private readonly idlePollMs: number;
@@ -294,13 +447,10 @@ export class Fetcher {
   private wakeTimer: NodeJS.Timeout | undefined;
   private queue: QueueItem[] = [];
   private readonly active = new Map<string, AbortController>();
-  private readonly busyDomains = new Set<string>();
-  /** Pages in the browser now. */
+  /** This fetcher's pages in its browser now. */
   private browserActive = 0;
   /** Why the browser cannot render pages in this process, once a launch found out. */
   private browserUnavailable: Unavailable | undefined;
-  /** When the last request to each domain ended. */
-  private readonly lastDone = new Map<string, number>();
   /** Page text extraction, off the event loop. */
   private readonly extractor = new Extractor();
   /** Settles when no fetch is in flight; for tests and shutdown. */
@@ -313,10 +463,10 @@ export class Fetcher {
     this.dir = options.dir;
     this.fetch = options.fetch ?? safeFetch;
     this.fetchOptions = options.fetchOptions;
-    this.concurrency = options.concurrency ?? CONCURRENCY;
+    this.pool =
+      options.pool ??
+      new FetchPool({ concurrency: options.concurrency, browserPages: options.browserPages, domainGapMs: options.domainGapMs });
     this.renderer = options.renderer ?? new HeadlessBrowser({ env: this.env });
-    this.browserPages = options.browserPages ?? BROWSER_PAGES;
-    this.domainGapMs = options.domainGapMs ?? DOMAIN_GAP_MS;
     this.leaseTtlMs = options.leaseTtlMs ?? LEASE_TTL_MS;
     this.heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
     this.idlePollMs = options.idlePollMs ?? IDLE_POLL_MS;
@@ -368,6 +518,7 @@ export class Fetcher {
   /** Starts the heartbeat: takes the lease if it is free and starts fetching. Does nothing when disabled. */
   start(): void {
     if (this.current.state === "disabled" || this.stopped || this.heartbeat) return;
+    this.pool.join(this);
     this.heartbeat = setInterval(() => this.beat(), this.heartbeatMs);
     this.heartbeat.unref();
     this.beat();
@@ -378,6 +529,36 @@ export class Fetcher {
     while (this.active.size > 0) await this.settled;
   }
 
+  // --- for the pool --------------------------------------------------------------
+
+  /** This fetcher's fetches in flight. */
+  inFlight(): number {
+    return this.active.size;
+  }
+
+  /** Whether pages are queued, waiting for a slot. */
+  hasQueue(): boolean {
+    return this.holding && !this.stopped && this.queue.length > 0;
+  }
+
+  /** Starts what it can now that a slot may be free; never throws. */
+  poke(): void {
+    try {
+      this.pump();
+    } catch (err) {
+      this.fail(err);
+    }
+  }
+
+  /** This index's row for `url`, for another source's fetcher; undefined when there is none or the index cannot be read. */
+  storedPage(url: string): Required<PageRow> | undefined {
+    try {
+      return this.store?.getPage(url);
+    } catch {
+      return undefined;
+    }
+  }
+
   /**
    * Shutdown: aborts the fetches in flight (their pages stay as they were),
    * gives the lease up and closes the store. Synchronous, so it can run from
@@ -386,6 +567,7 @@ export class Fetcher {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    this.pool.leave(this);
     if (this.heartbeat) clearInterval(this.heartbeat);
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.heartbeat = this.wakeTimer = undefined;
@@ -570,29 +752,36 @@ export class Fetcher {
     if (policyChanged) store.setMeta(POLICY_KEY, policy);
   }
 
-  /** Starts fetches up to the concurrency limit, each on a domain that is free and has rested. */
+  /**
+   * Starts fetches while the pool has room, each on a domain that is free and
+   * has rested; a page another source's fetcher fetched lately is taken from
+   * its index instead.
+   */
   private pump(): void {
     if (!this.holding || this.stopped) return;
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.wakeTimer = undefined;
     let waitMs = Infinity;
-    while (this.active.size < this.concurrency) {
+    while (this.pool.hasRoom()) {
       const now = this.now();
       let picked = -1;
       for (let i = 0; i < this.queue.length; i++) {
         const { domain, browser } = this.queue[i];
-        if (this.busyDomains.has(domain)) continue;
-        if (browser && this.browserActive >= this.browserPages) continue;
-        const ready = (this.lastDone.get(domain) ?? -Infinity) + this.domainGapMs;
-        if (ready > now) {
-          waitMs = Math.min(waitMs, ready - now);
+        const wait = this.pool.waitMs(domain, browser ?? false, now);
+        if (wait > 0) {
+          if (wait < Infinity) waitMs = Math.min(waitMs, wait);
           continue;
         }
         picked = i;
         break;
       }
       if (picked < 0) break;
-      this.launch(this.queue.splice(picked, 1)[0]);
+      const item = this.queue.splice(picked, 1)[0];
+      if (this.adopt(item)) {
+        if (!this.holding || this.stopped) return;
+        continue;
+      }
+      this.launch(item);
     }
     if (this.active.size === 0 && this.queue.length === 0) {
       this.current = { state: "idle", fetched: this.current.fetched };
@@ -604,7 +793,7 @@ export class Fetcher {
           this.fail(err);
         }
       });
-    } else if (waitMs < Infinity && this.active.size < this.concurrency) {
+    } else if (waitMs < Infinity && this.pool.hasRoom()) {
       this.wake(waitMs, () => this.pump());
     }
   }
@@ -621,28 +810,57 @@ export class Fetcher {
   private launch(item: QueueItem): void {
     const controller = new AbortController();
     this.active.set(item.url, controller);
-    this.busyDomains.add(item.domain);
+    this.pool.take(item.domain, item.browser ?? false);
     if (item.browser) this.browserActive++;
     this.current = { state: "fetching", fetched: this.current.fetched };
     const run = (item.browser ? this.renderOne(item, controller.signal) : this.fetchOne(item, controller.signal)).finally(() => {
       this.active.delete(item.url);
-      this.busyDomains.delete(item.domain);
-      this.lastDone.set(item.domain, this.now());
+      this.pool.release(item.domain, item.browser ?? false, this.now());
       if (item.browser) this.browserActive--;
-      if (this.stopped || !this.holding) return;
-      // The browser stays open only while pages wait for it.
-      if (item.browser && this.browserActive === 0 && !this.queue.some((queued) => queued.browser)) {
-        void this.renderer.close();
+      if (!this.stopped && this.holding) {
+        // The browser stays open only while pages wait for it.
+        if (item.browser && this.browserActive === 0 && !this.queue.some((queued) => queued.browser)) {
+          void this.renderer.close();
+        }
+        // When the queue ran dry, look for more right away: new bookmarks, or retries now due.
+        try {
+          if (this.queue.length === 0 && this.active.size === 0) this.refill();
+        } catch (err) {
+          this.fail(err);
+        }
       }
-      // When the queue ran dry, look for more right away: new bookmarks, or retries now due.
-      try {
-        if (this.queue.length === 0 && this.active.size === 0) this.refill();
-        this.pump();
-      } catch (err) {
-        this.fail(err);
-      }
+      // The freed slot: to this fetcher or another source's, whichever has the fewest in flight.
+      this.pool.dispatch(this);
     });
     this.settled = Promise.allSettled([this.settled, run]).then(() => undefined);
+  }
+
+  /**
+   * Records a page another source's fetcher fetched lately (adoptedRow) as
+   * this one's, with no request; whether the page is done with (taken, gone,
+   * or the index failed). Never throws.
+   */
+  private adopt(item: QueueItem): boolean {
+    const theirs = this.pool.sharedPage(item.url, this);
+    if (!theirs || !this.store) return false;
+    try {
+      const previous = this.store.getPage(item.url);
+      if (!previous) return true; // the bookmark went away meanwhile
+      const row = adoptedRow(theirs, previous, item.browser ?? false, this.now());
+      if (!row) return false;
+      this.store.upsertPage(row);
+      if (row.status === "needs_browser" && !this.browserUnavailable) this.queue.unshift({ ...item, browser: true });
+      this.current = { ...this.current, fetched: this.current.fetched + 1 };
+    } catch (err) {
+      this.fail(err);
+      return true;
+    }
+    try {
+      this.onPage(item.url);
+    } catch (err) {
+      console.error(`mnemos: after storing ${item.url}: ${message(err)}`);
+    }
+    return true;
   }
 
   /** Fetches one page and records what happened; never throws. */
