@@ -159,7 +159,17 @@ root entry and that matrix in step.
   profile. `test/unreadable-bookmarks.test.js` (unit): only a missing file (`ENOENT`) gets the
   missing-file error; a directory (`EISDIR`) and a file without read permission (`EACCES`, skipped
   on Windows and as root) each name their code and the path.
-- **Untested**: nothing known.
+  `test/profile-defaults.test.js` (unit, `Local State` and INI fixtures in
+  `test/fixtures/profiles`): without a profile, Chromium reads `profile.last_used`, and
+  `Default` when `Local State` has no `last_used` (Edge, Brave), is missing or cut off, or names
+  a directory that is gone or a path; Opera's root-level `Bookmarks` still the default; a named
+  profile wins over `last_used`; `--profile` / `MNEMOS_PROFILE` by display name from
+  `profile.info_cache`, exactly or ignoring case, a directory's own name winning over another
+  profile's display name; Firefox's default from `installs.ini`, passing over a `Default` that
+  names no listed profile, else `Default=1`; Firefox `Name=` exactly or ignoring case; the
+  missing-profile errors of both listing `Display Name (directory)`.
+- **Untested**: `Local State` and `installs.ini` from real installs with several profiles.
+- **Tickets**: mnemos-5ij.4
 
 ## Local index store
 

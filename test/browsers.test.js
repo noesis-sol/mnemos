@@ -316,7 +316,7 @@ test("Firefox: CHROME_PROFILE picks a profile by name or directory; unknown name
   process.env.CHROME_PROFILE = "work";
   assert.throws(
     () => lib.bookmarksPath(),
-    /No Firefox profile named "work".*Firefox profiles that have bookmarks: default\./s,
+    /No Firefox profile named "work".*Firefox profiles that have bookmarks: default \(aaaa\.default\)\./s,
   );
 });
 
@@ -331,7 +331,7 @@ test("Firefox: a profile without places.sqlite lists the profiles that have one"
   process.env.MNEMOS_BOOKMARKS_BROWSER = "firefox";
   assert.throws(
     () => lib.listFolders(),
-    /No bookmarks file at .*bbbb\.default-release.*Firefox profiles that have bookmarks: default\./s,
+    /No bookmarks file at .*bbbb\.default-release.*Firefox profiles that have bookmarks: default \(aaaa\.default\)\./s,
   );
 });
 

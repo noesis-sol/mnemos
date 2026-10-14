@@ -232,10 +232,76 @@ export function chromiumBase(
   }
 }
 
+/** What a Chromium user-data directory's `Local State` file says about its profiles. */
+export interface ChromiumLocalState {
+  /** The profile directory the browser last opened (profile.last_used), if it still exists. */
+  lastUsed?: string;
+  /** Each profile directory's display name (profile.info_cache[dir].name). */
+  names: Record<string, string>;
+}
+
 /**
- * The Bookmarks file of `profile` (a profile directory's name; Default when
- * unset). Opera's Default profile is the root-level Bookmarks file when
- * there is one and no Default/Bookmarks.
+ * The last-used profile and the profiles' display names from `<base>/Local
+ * State`; nothing when the file is missing or unreadable. Edge and Brave
+ * leave last_used out while there is only one profile.
+ */
+export function chromiumLocalState(base: string): ChromiumLocalState {
+  const state: ChromiumLocalState = { names: Object.create(null) };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(path.join(base, "Local State"), "utf-8").replace(/^\uFEFF/, ""));
+  } catch {
+    return state;
+  }
+  const profile = isRecord(parsed) && isRecord(parsed.profile) ? parsed.profile : undefined;
+  if (!profile) return state;
+  const lastUsed = profile.last_used;
+  // A directory name, never a path: Local State must not point mnemos elsewhere.
+  if (
+    typeof lastUsed === "string" &&
+    lastUsed !== "" &&
+    lastUsed === path.basename(lastUsed) &&
+    !/[\\/]/.test(lastUsed) &&
+    lastUsed !== "." &&
+    lastUsed !== ".." &&
+    fs.existsSync(path.join(base, lastUsed))
+  ) {
+    state.lastUsed = lastUsed;
+  }
+  if (isRecord(profile.info_cache)) {
+    for (const [dir, info] of Object.entries(profile.info_cache)) {
+      if (isRecord(info) && typeof info.name === "string" && info.name) state.names[dir] = info.name;
+    }
+  }
+  return state;
+}
+
+/**
+ * The profile directory `wanted` names under `base`: a directory's name, else
+ * a display name (exactly, then ignoring case). When `wanted` is unset, the
+ * profile the browser last opened, else Default. A name matching nothing is
+ * returned as it is, so the missing-file error names it.
+ */
+export function chromiumProfileDir(base: string, wanted: string | undefined): string {
+  const state = chromiumLocalState(base);
+  if (!wanted) return state.lastUsed ?? "Default";
+  if (wanted in state.names || fs.existsSync(path.join(base, wanted, "Bookmarks"))) return wanted;
+  const named = Object.entries(state.names);
+  const lower = wanted.toLowerCase();
+  const match =
+    named.find(([, name]) => name === wanted) ?? named.find(([, name]) => name.toLowerCase() === lower);
+  return match ? match[0] : wanted;
+}
+
+/** A profile as the errors list it: "Display Name (directory)", or the directory alone. */
+export function profileLabel(name: string | undefined, dir: string): string {
+  return name && name !== dir ? `${name} (${dir})` : dir;
+}
+
+/**
+ * The Bookmarks file of `profile` (a profile directory's or display name; the
+ * last-used profile, else Default, when unset). Opera's Default profile is
+ * the root-level Bookmarks file when there is one and no Default/Bookmarks.
  */
 export function chromiumBookmarksPath(
   browser: ChromiumBrowser,
@@ -244,7 +310,7 @@ export function chromiumBookmarksPath(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const base = chromiumBase(browser, platform, env);
-  const name = profile || "Default";
+  const name = chromiumProfileDir(base, profile);
   const file = path.join(base, name, "Bookmarks");
   if (CHROMIUM_DIRS[browser].rootProfile && name === "Default" && !fs.existsSync(file)) {
     const root = path.join(base, "Bookmarks");
@@ -270,6 +336,19 @@ export function chromiumProfiles(
     profiles.sort();
   }
   return profiles;
+}
+
+/**
+ * The profiles of a Chromium-based browser that hold a Bookmarks file, as
+ * "Display Name (directory)", sorted by directory.
+ */
+export function chromiumProfileLabels(
+  browser: ChromiumBrowser,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const { names } = chromiumLocalState(chromiumBase(browser, platform, env));
+  return chromiumProfiles(browser, platform, env).map((dir) => profileLabel(names[dir], dir));
 }
 
 /** Chromium profile directories under `base` that hold a Bookmarks file, sorted. */
@@ -324,15 +403,11 @@ export interface FirefoxProfile {
   isDefault: boolean;
 }
 
-/**
- * The profiles listed in `<base>/profiles.ini`, in file order; empty when
- * there is no such file. The default is the one an [Install…] section names
- * (what current Firefox opens), else the [Profile…] marked Default=1.
- */
-export function firefoxProfiles(base: string): FirefoxProfile[] {
+/** The sections of an INI file, in file order; empty when it cannot be read. */
+function readIni(file: string): { name: string; keys: Record<string, string> }[] {
   let ini: string;
   try {
-    ini = fs.readFileSync(path.join(base, "profiles.ini"), "utf-8");
+    ini = fs.readFileSync(file, "utf-8");
   } catch {
     return [];
   }
@@ -348,8 +423,18 @@ export function firefoxProfiles(base: string): FirefoxProfile[] {
       sections[sections.length - 1].keys[line.slice(0, at).trim()] = line.slice(at + 1).trim();
     }
   }
-  const installDefault = sections.find((s) => s.name.startsWith("Install") && s.keys.Default)?.keys
-    .Default;
+  return sections;
+}
+
+/**
+ * The profiles listed in `<base>/profiles.ini`, in file order; empty when
+ * there is no such file. The default is what current Firefox opens: the
+ * profile installs.ini names for an install (one [<install hash>] section
+ * each), else the one an [Install…] section of profiles.ini names, else the
+ * [Profile…] marked Default=1.
+ */
+export function firefoxProfiles(base: string): FirefoxProfile[] {
+  const sections = readIni(path.join(base, "profiles.ini"));
   const listed = sections
     .filter((s) => /^Profile\d+$/.test(s.name) && s.keys.Path)
     .map((s) => ({
@@ -358,7 +443,15 @@ export function firefoxProfiles(base: string): FirefoxProfile[] {
       dir: s.keys.IsRelative === "0" ? s.keys.Path : path.join(base, s.keys.Path),
       marked: s.keys.Default === "1",
     }));
-  const chosen = listed.find((p) => p.path === installDefault) ?? listed.find((p) => p.marked);
+  const installDefaults = [
+    ...readIni(path.join(base, "installs.ini")),
+    ...sections.filter((s) => s.name.startsWith("Install")),
+  ]
+    .map((s) => s.keys.Default)
+    .filter((d): d is string => Boolean(d));
+  const chosen =
+    installDefaults.map((d) => listed.find((p) => p.path === d)).find((p) => p !== undefined) ??
+    listed.find((p) => p.marked);
   return listed.map((p) => ({ name: p.name, dir: p.dir, isDefault: p === chosen }));
 }
 
@@ -387,18 +480,18 @@ export function firefoxPlacesPath(
     throw new Error(
       `No Firefox profile named "${wanted}" in ${path.join(base, "profiles.ini")}. ` +
         `Firefox profiles that have bookmarks: ${firefoxProfilesWithBookmarks(base).join(", ") || "none"}. ` +
-        `Choose one with --profile or ${PROFILE_ENV} (Firefox profile name), or set ${PATH_ENV}.`,
+        `Choose one with --profile or ${PROFILE_ENV} (profile name or directory), or set ${PATH_ENV}.`,
     );
   }
   return path.join(profile.dir, "places.sqlite");
 }
 
-/** Names of the Firefox profiles under `base` that have a places.sqlite, sorted. */
+/** The Firefox profiles under `base` that have a places.sqlite, as "Name (directory)", sorted by name. */
 export function firefoxProfilesWithBookmarks(base: string): string[] {
   return firefoxProfiles(base)
     .filter((p) => fs.existsSync(path.join(p.dir, "places.sqlite")))
-    .map((p) => p.name)
-    .sort();
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((p) => profileLabel(p.name, path.basename(p.dir)));
 }
 
 export function isSqlite(head: Buffer): boolean {

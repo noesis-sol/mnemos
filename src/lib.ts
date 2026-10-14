@@ -19,7 +19,7 @@ import {
   browsersWithBookmarks,
   chromiumBase,
   chromiumBookmarksPath,
-  chromiumProfiles,
+  chromiumProfileLabels,
   firefoxBase,
   firefoxPlacesPath,
   firefoxProfilesWithBookmarks,
@@ -128,13 +128,13 @@ function unreadable(browser: Browser, file: string, error: unknown): Error {
     message =
       `No bookmarks file at ${file}. ` +
       `Firefox profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
-      `Choose one with --profile or ${PROFILE_ENV} (Firefox profile name), or set ${PATH_ENV}.`;
+      `Choose one with --profile or ${PROFILE_ENV} (profile name or directory), or set ${PATH_ENV}.`;
   } else {
-    const available = chromiumProfiles(browser);
+    const available = chromiumProfileLabels(browser);
     message =
       `No bookmarks file at ${file}. ` +
       `${BROWSER_NAMES[browser]} profiles that have bookmarks: ${available.join(", ") || "none"}. ` +
-      `Choose one with --profile or ${PROFILE_ENV} (profile directory name), or set ${PATH_ENV}.`;
+      `Choose one with --profile or ${PROFILE_ENV} (profile name or directory), or set ${PATH_ENV}.`;
   }
   const others = browsersWithBookmarks(browser);
   if (others.length > 0) {

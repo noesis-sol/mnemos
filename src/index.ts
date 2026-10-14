@@ -15,9 +15,10 @@
  *   MNEMOS_BOOKMARKS_BROWSER chrome (default), chrome-beta, chrome-dev,
  *                            chrome-canary, chromium, edge, brave, vivaldi,
  *                            opera, firefox or safari
- *   MNEMOS_PROFILE           Profile directory name (default: "Default"), or
- *                            for Firefox the profile name (default: Firefox's);
- *                            CHROME_PROFILE is an older alias
+ *   MNEMOS_PROFILE           Profile display name or directory (default: the
+ *                            profile the browser last used, else Default; for
+ *                            Firefox, the one it opens); CHROME_PROFILE is an
+ *                            older alias
  *   MNEMOS_BOOKMARKS_PATH    Absolute path to any supported browser's bookmarks
  *                            file (overrides the above); CHROME_BOOKMARKS_PATH
  *                            is an older alias

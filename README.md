@@ -153,7 +153,7 @@ variable:
 | Flag | Environment variable | Default | Purpose |
 |------|----------------------|---------|---------|
 | `--browser <id>` | `MNEMOS_BOOKMARKS_BROWSER` | `chrome` | Browser to read: `chrome`, `chrome-beta`, `chrome-dev`, `chrome-canary`, `chromium`, `edge`, `brave`, `vivaldi`, `opera`, `firefox` or `safari` |
-| `--profile <name>` | `MNEMOS_PROFILE` | `Default` | Profile directory name (e.g. `Profile 3`); for Firefox, the profile's name (default: the one Firefox opens). `CHROME_PROFILE` is an older name for the variable |
+| `--profile <name>` | `MNEMOS_PROFILE` | the profile the browser opens | Profile name as the browser shows it (e.g. `Work`, any case) or its directory (e.g. `Profile 3`). `CHROME_PROFILE` is an older name for the variable |
 
 For example, `claude mcp add --scope user mnemos -- npx -y mnemos-mcp --browser firefox`,
 or in Claude Desktop's config, `"args": ["-y", "mnemos-mcp", "--browser", "edge", "--profile", "Profile 1"]`.
@@ -176,8 +176,10 @@ Environment variables are set with `-e`, e.g. `claude mcp add --scope user mnemo
 > Chrome profiles live in `~/Library/Application Support/Google/Chrome` (macOS),
 > `%LOCALAPPDATA%\Google\Chrome\User Data` (Windows), and
 > `~/.config/google-chrome` (Linux). Directory names are `Default`,
-> `Profile 1`, `Profile 2`, … — **not** the display names you see in
-> Chrome's UI.
+> `Profile 1`, `Profile 2`, …; `--profile` takes either the directory or the
+> name you see in Chrome's UI (from the `Local State` file). Without a
+> profile, mnemos reads the one Chrome last used (`Default` when `Local State`
+> does not say).
 
 | Browser | macOS | Windows | Linux |
 |---------|-------|---------|-------|
@@ -201,14 +203,16 @@ Environment variables are set with `-e`, e.g. `claude mcp add --scope user mnemo
 >
 > **Node 22.13** is the floor: mnemos keeps its index with `node:sqlite`, and
 > reads Firefox's `places.sqlite` with it too. Firefox profiles are those
-> listed in `profiles.ini`.
+> listed in `profiles.ini`; without a profile, mnemos reads the one
+> `installs.ini` names for your Firefox install (else the `profiles.ini`
+> default).
 >
 > **Safari**: macOS lets only apps with *Full Disk Access* read Safari's
 > bookmarks. Add the app that runs mnemos — your terminal for Claude Code, or
 > Claude Desktop — in System Settings › Privacy & Security › Full Disk Access.
 
 If the profile has no bookmarks file, mnemos tells the assistant which of the
-browser's profiles do, and which other browsers have bookmarks — no cryptic
+browser's profiles do (as `Display Name (directory)`), and which other browsers have bookmarks — no cryptic
 tracebacks.
 
 ### Cache
