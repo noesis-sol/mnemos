@@ -72,8 +72,13 @@ function readIndex(s) {
   const db = new DatabaseSync(file);
   try {
     db.exec("PRAGMA busy_timeout = 5000");
+    // One read transaction, so the rows and titles_indexed_at come from the same
+    // snapshot: read apart, the run could store its last vectors and the mark
+    // between them, and rows without vectors would pass for a completed run.
+    db.exec("BEGIN");
     const rows = db.prepare("SELECT guid, url, title, vector FROM bookmarks ORDER BY guid").all();
     const meta = db.prepare("SELECT value FROM meta WHERE key = 'titles_indexed_at'").get();
+    db.exec("COMMIT");
     return { rows, indexedAt: meta ? Number(meta.value) : undefined };
   } catch {
     return null; // the server is still creating it
