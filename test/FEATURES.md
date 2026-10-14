@@ -121,6 +121,9 @@ root entry and that matrix in step.
   `added: null`; bookmarks sharing a timestamp keep document order; the default limit of 100 and
   the cap of 200 with `total_matches` intact; a 23:30 UTC timestamp renders as the next day under
   `TZ=Asia/Tokyo` and the same day under `TZ=UTC`.
+  `test/recent-undated.test.js` (unit): a Safari file with no dates comes back in file order with
+  a note saying so, truncated too; a note counting the dated ones when only some are; no note when
+  all are dated.
 - **Untested**: nothing known.
 
 ## top_domains
