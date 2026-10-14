@@ -153,6 +153,10 @@ next time it starts. What changes ([CHANGELOG](CHANGELOG.md)):
 To stay on 0.3 (read-only, no network, Node 18+), pin it in your MCP
 configuration: `npx -y mnemos-mcp@0.3`.
 
+If your client still runs 0.3 after a restart (an older npm can reuse the copy
+`npx` cached), quit it, delete `~/.npm/_npx` (`%LOCALAPPDATA%\npm-cache\_npx` on
+Windows) and start it again.
+
 ### The first start
 
 The package itself is small: mnemos and its dependencies, plus two optional
@@ -413,7 +417,8 @@ Every plain fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
   with `--browser all`, that is every browser's and every profile's bookmarks,
   work and personal alike. Choose with `--browser` and `--profile` what it may
   read.
-- **Auditable.** [`src/index.ts`](src/index.ts) is the MCP wiring,
+- **Auditable.** [`src/cli.ts`](src/cli.ts) is the entry point, which checks
+  the Node version, [`src/index.ts`](src/index.ts) the MCP wiring,
   [`src/lib.ts`](src/lib.ts) the keyword tools, [`src/semantic.ts`](src/semantic.ts)
   semantic search, and [`src/fetch.ts`](src/fetch.ts) the whole fetch policy.
 
@@ -424,7 +429,7 @@ git clone git@github.com:noesis-sol/mnemos.git && cd mnemos
 npm install          # installs deps and builds via the prepare script
 npm test             # unit, fixture and protocol tests (node:test, zero extra deps)
 npm run build        # recompile after changes
-node dist/index.js   # run the server (speaks MCP over stdio)
+npm start            # run the server (node dist/cli.js; speaks MCP over stdio)
 scripts/check-full.sh  # npm test, then the end-to-end suites in e2e/
 ```
 
@@ -441,9 +446,10 @@ missing model). The suites that download the real model run only with
 `MNEMOS_E2E_MODEL=1`. [`test/FEATURES.md`](test/FEATURES.md) maps each feature
 to its tests.
 
-CI runs the suite on macOS, Windows, and Linux across Node 22 and 24, and the
-semantic search acceptance test, with the real model, on Linux for every push
-to main and pull request (on all three weekly).
+CI runs the suite on macOS, Windows, and Linux across Node 22 and 24, checks
+that on Node 20 mnemos connects and explains the Node requirement instead of
+crashing, and runs the semantic search acceptance test, with the real model, on
+Linux for every push to main and pull request (on all three weekly).
 
 ---
 
