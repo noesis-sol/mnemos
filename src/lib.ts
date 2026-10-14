@@ -170,7 +170,9 @@ export function loadRoots(): Record<string, BookmarkNode> {
   const name = isChromium(browser) ? BROWSER_NAMES[browser] : "The browser";
   let parsed: unknown;
   try {
-    parsed = JSON.parse(data.toString("utf-8"));
+    // A leading byte order mark, which Windows editors write, is not JSON;
+    // Chrome never writes one, so it is dropped rather than read as mid-write.
+    parsed = JSON.parse(data.toString("utf-8").replace(/^\uFEFF/, ""));
   } catch (e) {
     throw new Error(
       `Bookmarks file at ${file} is not valid JSON (${e}). ` +

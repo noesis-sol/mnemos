@@ -141,7 +141,9 @@ root entry and that matrix in step.
 - **Tests**: `test/lib.test.js` (unit): `chromeBase` per platform, `LOCALAPPDATA` and
   `XDG_CONFIG_HOME` honoured, empty variables treated as unset; `bookmarksPath` override and empty
   `CHROME_PROFILE`. `test/tools.test.js` (unit): missing file, malformed JSON and a non-Chrome
-  JSON file all give friendly errors. `test/profiles.test.js` (unit, against a fake Chrome
+  JSON file all give friendly errors. `test/bookmarks-bom.test.js` (unit, and e2e over MCP): a
+  file starting with a UTF-8 byte order mark reads like one without it in every tool, and
+  malformed JSON, with or without the mark, still gets the mid-write message. `test/profiles.test.js` (unit, against a fake Chrome
   directory): `CHROME_PROFILE='Profile 3'` reads `<chrome dir>/Profile 3/Bookmarks` and no
   `CHROME_PROFILE` reads `Default`; the missing-file error lists the profiles that have a
   `Bookmarks` file, sorted, skipping those without one, and says `none` when the Chrome directory
