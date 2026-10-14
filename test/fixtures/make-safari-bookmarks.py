@@ -1,5 +1,7 @@
 # Writes test/fixtures/safari-bookmarks.plist, a small binary plist shaped like
-# Safari's ~/Library/Safari/Bookmarks.plist. Python's plistlib is an
+# Safari's ~/Library/Safari/Bookmarks.plist, and safari-bookmarks-undated.plist,
+# the same tree with no Reading List dates: like a real Safari, where only
+# Reading List items carry a date added. Python's plistlib is an
 # independent writer, so the fixture checks src/plist.ts against a real
 # encoder rather than against itself. Regenerate with:
 #   python3 test/fixtures/make-safari-bookmarks.py
@@ -57,4 +59,11 @@ root = {
 }
 
 out = pathlib.Path(__file__).with_name("safari-bookmarks.plist")
+out.write_bytes(plistlib.dumps(root, fmt=plistlib.FMT_BINARY))
+
+for child in root["Children"]:
+    if child.get("Title") == "com.apple.ReadingList":
+        for item in child["Children"]:
+            item["ReadingList"].pop("DateAdded", None)
+out = pathlib.Path(__file__).with_name("safari-bookmarks-undated.plist")
 out.write_bytes(plistlib.dumps(root, fmt=plistlib.FMT_BINARY))

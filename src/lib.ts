@@ -514,9 +514,27 @@ export function recentBookmarks(limit?: number): unknown {
     items.push({ added: valid ? Number(entry.node.date_added) : 0, entry });
   }
   items.sort((a, b) => b.added - a.added);
+  const returned = items.slice(0, cap(limit, 100));
+  const dated = returned.filter((i) => i.added > 0).length;
+  // Safari stores no date for ordinary bookmarks (only Reading List items have
+  // one), so undated bookmarks come back in file order, Favorites first. Say
+  // so, or that order reads as what the user is focused on now.
+  let note: string | undefined;
+  if (returned.length > 0 && dated === 0) {
+    note =
+      "The browser stores no date added for these bookmarks, so they are in the " +
+      "bookmarks file's order, not newest first: this list does not show what the " +
+      "user added recently.";
+  } else if (dated < returned.length) {
+    note =
+      `Only ${dated} of these ${returned.length} bookmarks ${dated === 1 ? "has" : "have"} ` +
+      "a date added; the rest (added: null) follow in the bookmarks file's order, " +
+      "not by recency.";
+  }
   return {
     total_matches: items.length,
-    bookmarks: items.slice(0, cap(limit, 100)).map((i) => fmt(i.entry)),
+    bookmarks: returned.map((i) => fmt(i.entry)),
+    ...(note === undefined ? {} : { note }),
   };
 }
 

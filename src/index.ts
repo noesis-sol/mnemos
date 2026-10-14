@@ -217,7 +217,9 @@ server.registerTool(
       "Return the most recently added bookmarks, newest first. Use this to " +
       "see what the user is currently interested in or researching. Bookmarks " +
       "whose stored date is missing or impossible (in the future) sort last " +
-      "and report `added: null`. Returns JSON with `total_matches`; if it " +
+      "and report `added: null`; a `note` says when some or all of the list " +
+      "is in file order because the browser stores no date (Safari keeps " +
+      "dates only for Reading List items). Returns JSON with `total_matches`; if it " +
       "exceeds `limit`, the list is truncated.",
     inputSchema: {
       limit: z.number().int().optional().describe("Max results (default 100, cap 200)"),
