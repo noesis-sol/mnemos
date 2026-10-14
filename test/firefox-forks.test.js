@@ -135,6 +135,30 @@ test("Linux: a fork's Flatpak directory wins when only it has a profiles.ini", (
   assert.equal(browsers.firefoxBase("zen", "linux", {}), path.join(home, ".zen"));
 });
 
+test("Linux: a fork's XDG directory (new installs on Firefox 147+) is read after its classic one", () => {
+  const xdg = path.join(home, "xdg");
+  const env = { XDG_CONFIG_HOME: xdg };
+  const dirs = {
+    librewolf: [path.join(xdg, "librewolf", "librewolf"), path.join(home, ".librewolf")],
+    zen: [path.join(xdg, "zen"), path.join(home, ".zen")],
+    floorp: [path.join(xdg, "floorp"), path.join(home, ".floorp")],
+  };
+  for (const [fork, [xdgDir, classic]] of Object.entries(dirs)) {
+    write(path.join(xdgDir, "profiles.ini"), PROFILES_INI);
+    assert.equal(browsers.firefoxBase(fork, "linux", env), xdgDir, fork);
+    // Without XDG_CONFIG_HOME, it is below ~/.config.
+    const config = xdgDir.replace(xdg, path.join(home, ".config"));
+    write(path.join(config, "profiles.ini"), PROFILES_INI);
+    assert.equal(browsers.firefoxBase(fork, "linux", {}), config, fork);
+    // The fork keeps using its classic directory where it exists, and so does mnemos.
+    write(path.join(classic, "profiles.ini"), PROFILES_INI);
+    assert.equal(browsers.firefoxBase(fork, "linux", env), classic, fork);
+  }
+  // Waterfox keeps its classic directory on 147+, so ~/.config/waterfox is not read.
+  write(path.join(xdg, "waterfox", "profiles.ini"), PROFILES_INI);
+  assert.equal(browsers.firefoxBase("waterfox", "linux", env), path.join(home, ".waterfox"));
+});
+
 test("Tor Browser: its install locations are tried in order", () => {
   const data = ["Browser", "TorBrowser", "Data", "Browser"];
   const launcher = ["torbrowser", "tbb", "x86_64", "tor-browser", ...data];

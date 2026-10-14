@@ -234,10 +234,10 @@ Environment variables are set with `-e`, e.g. `claude mcp add --scope user mnemo
 | Chromium | `~/Library/Application Support/Chromium` | `%LOCALAPPDATA%\Chromium\User Data` | `~/.config/chromium` |
 | Chrome Beta, Dev, Canary | `~/Library/Application Support/Google/Chrome Beta` (`Chrome Dev`, `Chrome Canary`) | `%LOCALAPPDATA%\Google\Chrome Beta\User Data` (`Chrome Dev`, `Chrome SxS`) | `~/.config/google-chrome-beta` (`google-chrome-unstable`, `google-chrome-canary`) |
 | Firefox | `~/Library/Application Support/Firefox` | `%APPDATA%\Mozilla\Firefox` | `~/.mozilla/firefox`, `~/.config/mozilla/firefox`, Snap or Flatpak |
-| LibreWolf | `~/Library/Application Support/librewolf` | `%APPDATA%\librewolf` | `~/.librewolf` or Flatpak |
+| LibreWolf | `~/Library/Application Support/librewolf` | `%APPDATA%\librewolf` | `~/.librewolf`, `~/.config/librewolf/librewolf` or Flatpak |
 | Waterfox | `~/Library/Application Support/Waterfox` | `%APPDATA%\Waterfox` | `~/.waterfox` or Flatpak |
-| Zen | `~/Library/Application Support/zen` | `%APPDATA%\zen` | `~/.zen` or Flatpak |
-| Floorp | `~/Library/Application Support/Floorp` | `%APPDATA%\Floorp` | `~/.floorp` or Flatpak |
+| Zen | `~/Library/Application Support/zen` | `%APPDATA%\zen` | `~/.zen`, `~/.config/zen` or Flatpak |
+| Floorp | `~/Library/Application Support/Floorp` | `%APPDATA%\Floorp` | `~/.floorp`, `~/.config/floorp` or Flatpak |
 | Tor Browser | `~/Library/Application Support/TorBrowser-Data/Browser` | `Desktop\Tor Browser\Browser\TorBrowser\Data\Browser` (also under `OneDrive`) | `~/tor-browser/Browser/TorBrowser/Data/Browser` (or `~/tor-browser_en-US`), or torbrowser-launcher's install, native or Flatpak |
 | Safari | `~/Library/Safari/Bookmarks.plist` | — | — |
 

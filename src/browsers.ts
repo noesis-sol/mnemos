@@ -455,8 +455,12 @@ interface FirefoxRoots {
 /**
  * Where Firefox and each fork may keep profiles.ini, per platform, in the
  * order they are tried. The forks differ from Firefox only in these
- * directories. Tor Browser is portable: its profiles sit inside the install,
- * so the candidates are where its installer and torbrowser-launcher put it.
+ * directories. Like Firefox 147+, LibreWolf, Zen and Floorp put new Linux
+ * installs below $XDG_CONFIG_HOME and keep using the classic directory where
+ * it exists; Waterfox stays in its classic one. Their Flatpaks persist the
+ * classic directory, so they keep it. Tor Browser is portable: its profiles
+ * sit inside the install, so the candidates are where its installer and
+ * torbrowser-launcher put it.
  */
 const FIREFOX_DIRS: Record<
   FirefoxBrowser,
@@ -479,6 +483,8 @@ const FIREFOX_DIRS: Record<
     win32: [path.join(at.appData, "librewolf")],
     linux: [
       path.join(at.home, ".librewolf"),
+      // vendor, then application
+      path.join(at.config, "librewolf", "librewolf"),
       path.join(at.home, ".var", "app", "io.gitlab.librewolf-community", ".librewolf"),
     ],
   }),
@@ -495,6 +501,7 @@ const FIREFOX_DIRS: Record<
     win32: [path.join(at.appData, "zen")],
     linux: [
       path.join(at.home, ".zen"),
+      path.join(at.config, "zen"),
       path.join(at.home, ".var", "app", "app.zen_browser.zen", ".zen"),
     ],
   }),
@@ -503,6 +510,7 @@ const FIREFOX_DIRS: Record<
     win32: [path.join(at.appData, "Floorp")],
     linux: [
       path.join(at.home, ".floorp"),
+      path.join(at.config, "floorp"),
       path.join(at.home, ".var", "app", "one.ablaze.floorp", ".floorp"),
     ],
   }),
