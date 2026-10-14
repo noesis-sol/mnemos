@@ -105,7 +105,7 @@ relevance cutoff, 20 by default, cap 100).
 
 ## Quick start
 
-Requires Node 22.13+ (macOS, Windows, or Linux). No clone, no setup — `npx` fetches and runs it:
+Requires Node 22.13+ (macOS, Windows, or Linux); coming from 0.3, see [Upgrading from 0.3](#upgrading-from-03). No clone, no setup — `npx` fetches and runs it:
 
 **Claude Code**
 
@@ -135,6 +135,23 @@ Then ask things like:
 - *"Have I saved anything about MCP servers?"*
 - *"Did I bookmark anything on how to keep sourdough starter alive?"*
 - *"Which sources do I trust for finance?"*
+
+### Upgrading from 0.3
+
+`npx -y mnemos-mcp` runs the newest mnemos, so your client picks up 0.5 the
+next time it starts. What changes ([CHANGELOG](CHANGELOG.md)):
+
+- **Node 22.13+.** On an older Node, mnemos still connects but answers every
+  tool with what to do, so your assistant tells you.
+- **The default browser, not Chrome.** Add `--browser chrome` to keep reading
+  Chrome ([Configuration](#configuration)).
+- **Network and disk.** mnemos now downloads its embedding runtime and model,
+  keeps an index in its [cache directory](#cache) and fetches the pages you
+  bookmarked ([Page fetching](#page-fetching)); `MNEMOS_FETCH_PAGES=0` turns
+  fetching off.
+
+To stay on 0.3 (read-only, no network, Node 18+), pin it in your MCP
+configuration: `npx -y mnemos-mcp@0.3`.
 
 ### The first start
 
