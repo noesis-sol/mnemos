@@ -46,7 +46,7 @@ after(() => {
 
 test("tarball: holds the compiled server and package.json", () => {
   const files = packed.files.map((f) => f.path);
-  for (const want of ["dist/index.js", "dist/lib.js", "dist/icon.js", "package.json"]) {
+  for (const want of ["dist/cli.js", "dist/index.js", "dist/lib.js", "dist/icon.js", "package.json"]) {
     assert.ok(files.includes(want), `${want} missing from ${files.join(", ")}`);
     assert.ok(existsSync(path.join(pkgDir, want)), `${want} not unpacked`);
   }

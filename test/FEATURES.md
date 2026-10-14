@@ -24,6 +24,7 @@ fetch any.
 | build | `scripts/check-fast.sh` | `npm run build` | `tsc`, type-checks `src/` |
 | unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (about 500 tests, ~23s, most of it servers started over stdio and pages fetched one per second) |
 | published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
+| old Node (e2e) | CI's `old-node` job (Node 20) | `node --test e2e/old-node.e2e.js` | starts the bin (`dist/cli.js`) on the Node running it; on a Node older than 22.13 checks the explaining server's handshake, instructions and a tool's `isError` (1 test, ~1s), on a supported Node skips |
 | embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages, and checks a text's vector is the same alone and in a batch (3 tests, ~30s with the download) |
 | semantic search acceptance (e2e) | `scripts/check-full.sh` (only with `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (43 bookmarks pointing at a local fixture site that serves what `pages.json` says) with the real model. Titles, with fetching off: waits for them, scores the title queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache. Pages, with fetching on and an installed browser (none fails it in CI, `$CI` set; elsewhere its checks are skipped): waits on `status.page_states` until every page is final and embedded, checks the state of each kind of page, proves from the site's request log that token-like, unsubscribe, `MNEMOS_SKIP_FOLDERS` and redirected-to-a-blocked-host URLs were never requested while their titles are found, scores the full query set (page queries `matched_on: "page"` with the topic in the snippet). Freshness: adds, then deletes and renames, bookmarks while the server runs. Prints a report and appends it to `$GITHUB_STEP_SUMMARY` (9 tests, ~2.5 min with the model in `MNEMOS_E2E_MODEL_CACHE`, most of it the pages fetched one per second) |
 
@@ -44,16 +45,37 @@ Runner times on macOS, Node 24, with `node_modules` installed (2026-10-13):
   about 30s for the model e2e and 2.5 min for the semantic search acceptance
 
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm test` and `node --test e2e/package.e2e.js`
-on ubuntu, macOS and Windows with Node 22 and 24.
+on ubuntu, macOS and Windows with Node 22 and 24, and in its `old-node` job `npm ci`, `npm run
+build` and `node --test e2e/old-node.e2e.js` on ubuntu with Node 20.
 `.github/workflows/semantic.yml` runs `node --test e2e/semantic.e2e.js` on ubuntu with Node 22
 for every push to main and pull request, and on ubuntu, macOS and Windows with Node 22 and 24
 weekly and by hand; it caches the model, keyed on its pinned revision.
 `test/node-floor.test.js` keeps `engines.node` (`>=22.13`, for `node:sqlite`), the lockfile's
 root entry and that matrix in step.
 
+## Unsupported Node version
+
+- **Reached by**: the bin, `dist/cli.js`, on a Node older than 22.13 (`npx -y mnemos-mcp` reaches
+  users on any Node): it imports nothing at the top, checks `process.versions.node` against
+  `MIN_NODE` (`src/node-version.ts`) and, instead of loading the server (which needs
+  `node:sqlite`), runs `src/unsupported-node.ts`: an MCP server whose instructions and every
+  tool's `isError` result say which Node mnemos needs, which one runs, and to upgrade or pin
+  `mnemos-mcp@0.3`; it also prints that to stderr.
+- **Tests**: `test/unsupported-node.test.js`: `supportsNode` on versions either side of 22.13;
+  `MIN_NODE` matches `engines.node`; the bin is `dist/cli.js` with a node shebang; the message
+  names both versions, upgrading and `mnemos-mcp@0.3`; e2e on the current Node with a faked old
+  version (`serveUnsupportedNode("20.17.0")` in a child): handshake, `serverInfo`, instructions,
+  the same six tool names the real server lists (checked against `dist/cli.js` on this Node),
+  and every tool answering `isError` with the message. `e2e/old-node.e2e.js` runs the bin itself
+  on Node 20 in CI.
+- **Untested**: Node 18 (the MCP SDK's minimum; `cli.ts` and `unsupported-node.ts` avoid newer
+  builtins, but no CI job runs 18).
+- **Tickets**: mnemos-nru
+
 ## MCP server start and handshake
 
-- **Reached by**: `npx -y mnemos-mcp` or `node dist/index.js` (the `bin` in `package.json`); an
+- **Reached by**: `npx -y mnemos-mcp` or `node dist/cli.js` (the `bin` in `package.json`, which
+  loads `dist/index.js` on a supported Node); an
   MCP client connects over stdio and sends `initialize`, then `tools/list`.
 - **Tests**: `test/server.test.js` (e2e: spawns `dist/index.js` with `process.execPath` and drives
   it with the SDK's `Client`): the six tools are listed with descriptions and object input
@@ -744,7 +766,7 @@ root entry and that matrix in step.
 - **Reached by**: `npm publish` / `npx -y mnemos-mcp`; `files` and `bin` in `package.json`.
 - **Tests**: `e2e/package.e2e.js` (e2e, run by `scripts/check-full.sh` and CI, not `npm test`):
   `npm pack --json --pack-destination` a scratch directory, then `tar -xzf`; the tarball lists
-  and unpacks `dist/index.js`, `dist/lib.js`, `dist/icon.js` and `package.json`, and nothing from
+  and unpacks `dist/cli.js`, `dist/index.js`, `dist/lib.js`, `dist/icon.js` and `package.json`, and nothing from
   `src/`, `test/` or `e2e/`; `package.json`'s one `bin` target is in the tarball and its first
   line is `#!/usr/bin/env node`; with `node_modules` linked (a junction) to the repo's installed
   dependencies (no `npm install`, no network) and the bin made executable as `npm install` would

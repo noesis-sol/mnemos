@@ -29,3 +29,19 @@ jobs:
       # Guard the publishable artifact: pack, unpack, check dist + the bin
       # target, and start the server through the bin.
       - run: node --test e2e/package.e2e.js
+
+  # mnemos needs Node 22.13+, but `npx -y mnemos-mcp` reaches users on older
+  # Node too: the bin must still connect and explain instead of crashing.
+  old-node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      - run: npm run build
+      - run: node --test e2e/old-node.e2e.js
