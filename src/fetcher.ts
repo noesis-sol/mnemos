@@ -481,7 +481,7 @@ export class Fetcher {
   private readonly active = new Map<string, AbortController>();
   /** This fetcher's pages in its browser now. */
   private browserActive = 0;
-  /** Why the browser cannot render pages in this process, once a launch found out. */
+  /** Why the browser cannot render pages in this process (or until its retry_at), once a launch found out. */
   private browserUnavailable: Unavailable | undefined;
   /** Page text extraction, off the event loop. */
   private readonly extractor = new Extractor();
@@ -534,6 +534,13 @@ export class Fetcher {
     if (waiting === 0) return undefined;
     const pages = waiting === 1 ? "1 page needs" : `${waiting} pages need`;
     return `${pages} a browser; ${this.browserUnavailable.hint}`;
+  }
+
+  /** Whether pages go to the browser: no launch found it unusable, or the retry of one that did not start is due. */
+  private browserUsable(): boolean {
+    const retryAt = this.browserUnavailable?.retry_at;
+    if (retryAt !== undefined && this.now() >= retryAt) this.browserUnavailable = undefined;
+    return !this.browserUnavailable;
   }
 
   /**
@@ -756,8 +763,9 @@ export class Fetcher {
     // them to this loop, which waits out a next attempt set on one, like duePages. With no
     // browser here they are fetched plainly again, on a failed page's backoff from their last
     // fetch, so a site that serves its text again comes back. That schedule is not stored: a
-    // later run with a browser renders them at once.
-    const browser = !this.browserUnavailable;
+    // later run with a browser renders them at once, and so does this one once a browser that
+    // did not start is due to be tried again.
+    const browser = this.browserUsable();
     for (const page of store.pageStates()) {
       const bookmark = info.get(page.url);
       if (page.status !== "needs_browser" || !bookmark || this.active.has(page.url)) continue;
@@ -923,7 +931,7 @@ export class Fetcher {
       const row = adoptedRow(theirs, previous, item.browser ?? false, this.now());
       if (!row) return false;
       this.store.upsertPage(row);
-      if (row.status === "needs_browser" && !this.browserUnavailable) this.queue.unshift({ ...item, browser: true });
+      if (row.status === "needs_browser" && this.browserUsable()) this.queue.unshift({ ...item, browser: true });
       this.current = { ...this.current, fetched: this.current.fetched + 1 };
     } catch (err) {
       this.fail(err);
@@ -1011,9 +1019,10 @@ export class Fetcher {
         // the last word, and an ok page keeps its text and chunks until it has.
         // The fail count carries over, so a page the browser keeps failing backs
         // off; with no browser it counts this fetch, so plain fetches back off too.
-        const fails = previous.fail_count + Number(this.browserUnavailable !== undefined);
+        const browser = this.browserUsable();
+        const fails = previous.fail_count + Number(!browser);
         row = { ...row, status: "needs_browser", fail_count: fails, ...keptText(previous) };
-        if (!this.browserUnavailable) this.queue.unshift({ ...item, browser: true });
+        if (browser) this.queue.unshift({ ...item, browser: true });
       }
       this.store.upsertPage(row);
       this.current = { ...this.current, fetched: this.current.fetched + 1 };

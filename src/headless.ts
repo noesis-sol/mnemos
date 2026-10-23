@@ -37,6 +37,9 @@ export const SETTLE_MS = 3_000;
 export const BROWSER_PAGES = 2;
 /** Rendered HTML longer than this is not extracted (the plain fetch's size cap, in characters). */
 export const MAX_RENDERED_CHARS = 5 * 1024 * 1024;
+/** The wait after a browser first fails to start, doubled after each further failure up to LAUNCH_RETRY_MAX_MS. */
+export const LAUNCH_RETRY_MIN_MS = 60_000;
+export const LAUNCH_RETRY_MAX_MS = 60 * 60_000;
 
 /** A top-frame document request the fetch policy refused: where it went, and why. */
 interface RefusedNavigation {
@@ -299,19 +302,25 @@ function isPage(request: PwRequest): boolean {
 
 /**
  * Why pages cannot be rendered in this process: the hint completes "N pages
- * need a browser; …" in the status.
+ * need a browser; …" in the status. A browser that did not start is tried
+ * again from retry_at; with none, the reason lasts for the process (no
+ * browser, MNEMOS_BROWSER=0 or naming no file, no playwright-core).
  */
 export interface Unavailable {
   ok: false;
   reason: string;
   hint: string;
+  retry_at?: number;
 }
 
 export type LaunchResult = { ok: true } | Unavailable;
 
 /** What the fetcher renders pages with; HeadlessBrowser, or a test's fake. */
 export interface PageRenderer {
-  /** Launches the browser if it is not running; the answer for an unavailable browser is kept for the process. */
+  /**
+   * Launches the browser if it is not running. The answer for an unavailable
+   * browser is kept until its retry_at, or for the process when it has none.
+   */
   launch(): Promise<LaunchResult>;
   /** Loads a page and returns its rendered HTML as a fetch outcome; never throws. */
   render(url: string, options: { config: FetchConfig; signal?: AbortSignal }): Promise<FetchOutcome>;
@@ -328,6 +337,8 @@ export interface HeadlessBrowserOptions {
   importPlaywright?: () => Promise<PlaywrightModule>;
   /** Where the temporary profile goes; defaults to os.tmpdir(). */
   tmpDir?: string;
+  /** The clock a failed start's retry_at is set and read by; defaults to Date.now. */
+  now?: () => number;
   timeoutMs?: number;
   settleMs?: number;
 }
@@ -363,9 +374,12 @@ export class HeadlessBrowser implements PageRenderer {
   private readonly tmpDir: string;
   private readonly timeoutMs: number;
   private readonly settleMs: number;
+  private readonly now: () => number;
   /** The fetch policy of the latest render; the route and the proxy read it. */
   private config: FetchConfig;
   private unavailable: Unavailable | undefined;
+  /** Starts that failed since the browser last started, for the backoff. */
+  private failures = 0;
   private running: Promise<Running | Unavailable> | undefined;
 
   constructor(options: HeadlessBrowserOptions = {}) {
@@ -376,6 +390,7 @@ export class HeadlessBrowser implements PageRenderer {
     this.tmpDir = options.tmpDir ?? os.tmpdir();
     this.timeoutMs = options.timeoutMs ?? RENDER_TIMEOUT_MS;
     this.settleMs = options.settleMs ?? SETTLE_MS;
+    this.now = options.now ?? Date.now;
     this.config = fetchConfig(this.env);
   }
 
@@ -386,10 +401,15 @@ export class HeadlessBrowser implements PageRenderer {
   }
 
   async launch(): Promise<LaunchResult> {
-    if (this.unavailable) return this.unavailable;
+    const known = this.unavailable;
+    if (known && (known.retry_at === undefined || this.now() < known.retry_at)) return known;
     this.running ??= this.start();
     const running = await this.running;
-    if ("context" in running) return { ok: true };
+    if ("context" in running) {
+      this.unavailable = undefined;
+      this.failures = 0;
+      return { ok: true };
+    }
     this.unavailable = running;
     this.running = undefined;
     return running;
@@ -434,8 +454,11 @@ export class HeadlessBrowser implements PageRenderer {
     } catch (err) {
       proxy.close();
       if (profile) fs.rmSync(profile, { recursive: true, force: true });
+      // Perhaps for a while (the browser updating, a timeout under load): tried again after a doubling wait.
       const reason = `${found.executablePath} did not start: ${message(err)}`;
-      return { ok: false, reason, hint: reason };
+      const wait = Math.min(LAUNCH_RETRY_MIN_MS * 2 ** this.failures, LAUNCH_RETRY_MAX_MS);
+      this.failures++;
+      return { ok: false, reason, hint: reason, retry_at: this.now() + wait };
     }
   }
 
