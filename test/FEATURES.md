@@ -560,6 +560,11 @@ root entry and that matrix in step.
   folder; a dead process's temporary folder is removed, another version's runtime kept; the
   embedder reports `installing` then `ready`, and a failed install is retried after the
   backoff; which npm runs, and without npx's `npm_*` variables.
+  `test/runtime-install-timeout.test.js` (a stub npm on the PATH, a node script, and an
+  `execPath` with no `npm-cli.js` beside it, offline): an npm that never exits is killed after
+  `timeoutMs`, rejecting with a `RuntimeInstallError` saying npm did not finish and leaving no
+  temporary folder (skipped on Windows, mnemos-abn); with no npm beside node the one on the PATH
+  is run with npm's install flags in a temporary folder, and what it installs is imported.
   `test/runtime-prune.test.js` (runtime folders laid out by hand, no npm): a load from the cache
   touches its folder's marker; other versions' folders are removed once their marker (or, from
   before markers, their loader) is 30 days old and kept before, a folder installed long ago
@@ -568,11 +573,13 @@ root entry and that matrix in step.
   the next load; a library beside mnemos leaves the cache as it is. `e2e/semantic.e2e.js`: the
   packed tarball installs without the library, and the first start installs it from the
   registry.
-- **Untested**: the install's 15-minute timeout; a mnemos that runs over 30 days without
-  reloading its runtime, whose folder another version's mnemos may then remove under it; npm on the PATH as the last resort (only the
-  choice of it is unit-tested); the download's progress events from the real library outside the e2e suites
+- **Untested**: the install's timeout on Windows, where npm on the PATH runs through cmd.exe
+  (mnemos-abn), and the 15-minute default itself (tests pass a small `timeoutMs`); a mnemos that
+  runs over 30 days without reloading its runtime, whose folder another version's mnemos may
+  then remove under it; the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
-- **Tickets**: mnemos-gts.9 (the install's timeout, npm on the PATH); mnemos-gts.15 (a runtime
+- **Tickets**: mnemos-gts.9 (the install's timeout, npm on the PATH); mnemos-abn (the timeout
+  on Windows); mnemos-gts.15 (a runtime
   folder pruned while in use)
 
 ## Background title indexing

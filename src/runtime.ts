@@ -123,6 +123,8 @@ export interface LoadTransformersOptions {
   importBeside?: () => Promise<unknown>;
   /** The environment npm and npmCommand see. */
   env?: NodeJS.ProcessEnv;
+  /** The node npmCommand looks for npm beside; tests pass one with none, so npm on the PATH runs. */
+  execPath?: string;
   timeoutMs?: number;
 }
 
@@ -171,7 +173,7 @@ async function installRuntime(root: string, folder: string, options: LoadTransfo
     };
     fs.writeFileSync(path.join(temp, "package.json"), JSON.stringify(manifest, null, 2) + "\n");
     fs.writeFileSync(path.join(temp, LOADER), `export * from ${JSON.stringify(TRANSFORMERS)};\n`);
-    await runNpm(temp, options.env ?? process.env, options.timeoutMs ?? INSTALL_TIMEOUT_MS);
+    await runNpm(temp, options.env ?? process.env, options.timeoutMs ?? INSTALL_TIMEOUT_MS, options.execPath);
     // npm links a file: spec without checking it, and exits 0.
     if (!fs.existsSync(path.join(temp, "node_modules", ...TRANSFORMERS.split("/"), "package.json"))) {
       throw new RuntimeInstallError(`npm install finished without installing ${TRANSFORMERS}`);
@@ -282,8 +284,8 @@ export function stopInstalls(): void {
 }
 
 /** Runs `npm install` in `cwd`, its output kept from stdout (the MCP channel). */
-function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise<void> {
-  const npm = npmCommand(env);
+function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, execPath?: string): Promise<void> {
+  const npm = npmCommand(env, execPath);
   const args = [...npm.args, "install", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", "--no-update-notifier", "--loglevel=error"];
   return new Promise((resolve, reject) => {
     if (installsStopped) return reject(new RuntimeInstallError("mnemos is shutting down"));
