@@ -104,6 +104,16 @@ only on this device, in a profile's `AccountBookmarks` file beside its
 Bookmarks`, so a folder in each keeps its own path, and `sources` names the
 file as `account_bookmarks`.
 
+Chrome is moving to encrypted bookmarks files (`EncryptedBookmarks2`,
+`EncryptedAccountBookmarks`), encrypted with the key it keeps saved passwords
+under, which mnemos does not read. While Chrome writes them beside the plain
+files, mnemos reads the plain ones; once it writes only the encrypted ones,
+mnemos says so (an error, or with several browsers a warning) rather than
+reporting no bookmarks file, and a result's `warnings` says when a plain file is
+older than its encrypted copy, so its bookmarks may be out of date. If
+`chrome://flags` lists *Bookmarks Encryption*, setting it to Disabled may make
+Chrome write the plain files again.
+
 Every tool that can truncate reports a `total_matches` count (`semantic_search`:
 `count_above_threshold`), so the assistant always knows when it is looking at a
 partial list. Defaults return up to 100 items (hard cap 200; `top_domains`

@@ -375,9 +375,66 @@ export function chromiumProfileDir(base: string, wanted: string | undefined): st
  */
 export const ACCOUNT_BOOKMARKS = "AccountBookmarks";
 
-/** Whether a Chromium profile directory holds bookmarks: a Bookmarks or an AccountBookmarks file. */
+/**
+ * Chrome's encrypted copies of a profile's Bookmarks and AccountBookmarks
+ * files ("EncryptedBookmarks2", "EncryptedAccountBookmarks"), encrypted with
+ * the key it keeps saved passwords under (os_crypt), which mnemos does not
+ * read. Chrome first writes them beside the plain files, then, at its
+ * bookmark encryption's last stage, stops writing the plain files.
+ */
+const ENCRYPTED_BOOKMARKS = /^Encrypted(Account)?Bookmarks\d*$/;
+
+/** A Chromium profile directory's encrypted bookmarks files, the newest of each kind. */
+export interface EncryptedBookmarks {
+  /** The encrypted copy of the Bookmarks file. */
+  bookmarks?: string;
+  /** The encrypted copy of the AccountBookmarks file. */
+  account?: string;
+}
+
+/** The encrypted bookmarks files in a Chromium profile directory (ENCRYPTED_BOOKMARKS); none when it cannot be listed. */
+export function chromiumEncryptedBookmarks(dir: string): EncryptedBookmarks {
+  const found: EncryptedBookmarks = {};
+  let names: string[];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return found;
+  }
+  const mtime = (file: string) => {
+    try {
+      return fs.statSync(file).mtimeMs;
+    } catch {
+      return -Infinity;
+    }
+  };
+  for (const name of names.sort()) {
+    const match = ENCRYPTED_BOOKMARKS.exec(name);
+    if (!match) continue;
+    const kind = match[1] ? "account" : "bookmarks";
+    const file = path.join(dir, name);
+    const kept = found[kind];
+    if (kept === undefined || mtime(file) > mtime(kept)) found[kind] = file;
+  }
+  return found;
+}
+
+/**
+ * Whether a Chromium profile directory holds bookmarks: a Bookmarks or an
+ * AccountBookmarks file, or only their encrypted copies, so that a profile
+ * whose bookmarks Chrome encrypts is found and reported as such.
+ */
 export function hasChromiumBookmarks(dir: string): boolean {
-  return fs.existsSync(path.join(dir, "Bookmarks")) || fs.existsSync(path.join(dir, ACCOUNT_BOOKMARKS));
+  if (fs.existsSync(path.join(dir, "Bookmarks")) || fs.existsSync(path.join(dir, ACCOUNT_BOOKMARKS))) return true;
+  const encrypted = chromiumEncryptedBookmarks(dir);
+  return encrypted.bookmarks !== undefined || encrypted.account !== undefined;
+}
+
+/** Where a Chromium browser's flags page is: "chrome://flags", "edge://flags". */
+export function chromiumFlagsPage(browser: ChromiumBrowser): string {
+  const scheme =
+    browser === "edge" || browser === "brave" || browser === "vivaldi" || browser === "opera" ? browser : "chrome";
+  return `${scheme}://flags`;
 }
 
 /** A profile as the errors list it: "Display Name (directory)", or the directory alone. */
@@ -440,7 +497,7 @@ export function chromiumProfileLabels(
   return chromiumProfiles(browser, platform, env).map((dir) => profileLabel(names[dir], dir));
 }
 
-/** Chromium profile directories under `base` that hold a Bookmarks or an AccountBookmarks file, sorted. */
+/** Chromium profile directories under `base` that hold bookmarks (hasChromiumBookmarks), sorted. */
 export function chromiumProfilesWithBookmarks(base: string): string[] {
   try {
     return fs

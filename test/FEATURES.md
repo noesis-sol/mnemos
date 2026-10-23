@@ -224,6 +224,27 @@ root entry and that matrix in step.
 - **Untested**: a real Chrome 146 profile's files; Chromium browsers other than Chrome and Opera.
 - **Tickets**: mnemos-a1d
 
+## Chrome's encrypted bookmarks (EncryptedBookmarks2)
+
+- **Reached by**: a Chromium profile's encrypted copies of its bookmarks files
+  (`EncryptedBookmarks2`, `EncryptedAccountBookmarks`: Chrome's bookmark encryption, which mnemos
+  does not decrypt); `browsers.chromiumEncryptedBookmarks`, `browsers.hasChromiumBookmarks`,
+  `browsers.chromiumFlagsPage`, `lib.encryptionWarnings`, `lib.STALE_PLAIN_MS`, the encrypted
+  branch of `lib.unreadable`, `lib.readBookmarks`'s warnings.
+- **Tests**: `test/bookmark-encryption.test.js` (unit, and e2e over MCP): a profile with only
+  encrypted files gets an error of its own naming them and what to do (never "No bookmarks
+  file"), Edge's naming `edge://flags`; it is listed among the profiles with bookmarks and found
+  by `--profile`; with several browsers (a list, `all`) it is a warning and the rest are read; a
+  profile with one of its two files kept only encrypted is read in part with a warning; plain
+  files written with their encrypted copies (or within `STALE_PLAIN_MS`) give no warning, one
+  older than its newest encrypted copy a warning that it may be stale; a file named by
+  `MNEMOS_BOOKMARKS_PATH` is read as it is; the server answers an encrypted-only profile with
+  the encryption error.
+- **Untested**: a real profile at the last stage (checked by hand with a copy of a real
+  `EncryptedBookmarks2`); whether disabling the "Bookmarks Encryption" flag brings the plain
+  file back.
+- **Tickets**: mnemos-8b4
+
 ## Local index store
 
 - **Reached by**: the background title indexer (see Background title indexing), the page

@@ -127,7 +127,8 @@ const server = new McpServer(
       "profiles and bookmarks files it read; when several browsers are read, " +
       "folder paths start with the browser's name, then the profile's when a " +
       "browser is read in several profiles. `warnings`, when present, " +
-      "name browsers or profiles whose bookmarks could not be read, so the result may be " +
+      "name browsers or profiles whose bookmarks could not be read, or were read only " +
+      "in part or from a file that may be out of date, so the result may be " +
       "incomplete: tell the user.",
   },
 );

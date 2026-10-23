@@ -16,10 +16,13 @@
  * A Chromium profile's bookmarks saved to the Google account (its
  * AccountBookmarks file) are read with the rest, under root folders of their
  * own ("Account Bookmarks Bar"), so a folder in each file keeps its own path.
+ * Chrome's encrypted bookmarks files, which mnemos cannot read, are reported
+ * for what they are (encryptedSource(), encryptionWarnings()).
  * Parsed bookmarks files are kept until they change (sourceRoots()).
  */
 
 import fs from "node:fs";
+import path from "node:path";
 import { domainToUnicode } from "node:url";
 import {
   BROWSER_ENV,
@@ -28,6 +31,8 @@ import {
   PROFILE_ENV,
   browsersWithBookmarks,
   chromiumBase,
+  chromiumEncryptedBookmarks,
+  chromiumFlagsPage,
   chromiumProfileLabels,
   firefoxBase,
   firefoxProfilesWithBookmarks,
@@ -137,6 +142,13 @@ function unreadable(source: Source, file: string, error: unknown, others = true)
             ? error.message
             : String(error);
     return new Error(`Cannot read the bookmarks file at ${file} (${code ?? "error"}): ${reason}.`);
+  } else if (encryptedSource(source).length > 0) {
+    // Not missing: Chrome keeps this profile's bookmarks only encrypted.
+    const name = BROWSER_NAMES[browser];
+    message =
+      `${name} keeps the bookmarks of profile ${source.profile} encrypted ` +
+      `(${encryptedSource(source).join(", ")}) and no longer writes the Bookmarks file mnemos reads ` +
+      `(${file}). ${encryptionRemedy(source)}`;
   } else if (browser === "safari" && process.platform !== "darwin") {
     message = `No bookmarks file at ${file}: Safari keeps its bookmarks only on macOS.`;
   } else if (browser === "safari") {
@@ -161,6 +173,95 @@ function unreadable(source: Source, file: string, error: unknown, others = true)
       ` (choose one with --browser or ${BROWSER_ENV}: ${elsewhere.join(", ")}).`;
   }
   return new Error(message);
+}
+
+/**
+ * How long a Chromium profile's encrypted bookmarks file may have been
+ * written after its plain one before the plain one is taken for stale:
+ * Chrome writes the two together, milliseconds apart.
+ */
+export const STALE_PLAIN_MS = 60_000;
+
+/** A file's modification time, or undefined when it cannot be stat'ed. */
+function mtime(file: string): number | undefined {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * A Chromium profile source's plain bookmarks files (Bookmarks, then
+ * AccountBookmarks), each with its encrypted copy when the profile has one;
+ * none for other browsers and for a file named by path.
+ */
+function encryptedPairs(source: Source): { plain: string; encrypted?: string }[] {
+  const account = accountBookmarksFile(source);
+  if (account === undefined) return [];
+  const encrypted = chromiumEncryptedBookmarks(path.dirname(source.bookmarks));
+  return [
+    { plain: source.bookmarks, encrypted: encrypted.bookmarks },
+    { plain: account, encrypted: encrypted.account },
+  ];
+}
+
+/**
+ * The encrypted bookmarks files of a Chromium profile that has neither a
+ * Bookmarks nor an AccountBookmarks file: Chrome's bookmark encryption's last
+ * stage, which writes only the encrypted files. Empty otherwise.
+ */
+function encryptedSource(source: Source): string[] {
+  const pairs = encryptedPairs(source);
+  if (pairs.some((p) => fs.existsSync(p.plain))) return [];
+  return pairs.flatMap((p) => (p.encrypted === undefined ? [] : [p.encrypted]));
+}
+
+/** What a user whose Chromium profile's bookmarks are encrypted can do. */
+function encryptionRemedy(source: Source): string {
+  const browser: Browser = source.browser ?? "chrome";
+  if (!isChromium(browser)) return "";
+  const name = BROWSER_NAMES[browser];
+  return (
+    `${name} encrypts them with the key it keeps saved passwords under, which mnemos does not read. ` +
+    `If ${chromiumFlagsPage(browser)} lists "Bookmarks Encryption", setting it to Disabled and ` +
+    `restarting ${name} may make it write the plain file again. Otherwise choose another profile ` +
+    `with --profile or ${PROFILE_ENV}, or another browser with --browser or ${BROWSER_ENV}.`
+  );
+}
+
+/**
+ * Warnings for a Chromium profile source that could be read, about the
+ * bookmarks Chrome keeps encrypted: those of one of its two files, when only
+ * the other is plain, which are not read; and a plain file older than its
+ * encrypted copy by more than STALE_PLAIN_MS, which Chrome may have stopped
+ * writing, so its bookmarks may be out of date.
+ */
+export function encryptionWarnings(source: Source): string[] {
+  const warnings: string[] = [];
+  const name = BROWSER_NAMES[source.browser ?? "chrome"];
+  for (const { plain, encrypted } of encryptedPairs(source)) {
+    if (encrypted === undefined) continue;
+    const plainAt = mtime(plain);
+    const encryptedAt = mtime(encrypted);
+    const which =
+      plain === source.bookmarks
+        ? "the bookmarks kept only on this device"
+        : "the bookmarks saved to the Google account";
+    if (plainAt === undefined) {
+      warnings.push(
+        `${name} keeps ${which} encrypted, in ${encrypted}, and mnemos read only the profile's other ` +
+          `bookmarks file. ${encryptionRemedy(source)}`,
+      );
+    } else if (encryptedAt !== undefined && encryptedAt - plainAt > STALE_PLAIN_MS) {
+      warnings.push(
+        `${plain} was last written ${new Date(plainAt).toISOString()}, before ${name}'s encrypted copy ` +
+          `${encrypted} (${new Date(encryptedAt).toISOString()}): ${name} may have stopped writing the ` +
+          `plain file mnemos reads, so ${which} may be out of date. ${encryptionRemedy(source)}`,
+      );
+    }
+  }
+  return warnings;
 }
 
 /**
@@ -451,6 +552,7 @@ export function readBookmarks(select?: SelectOptions): Bookmarks {
     const prefix = selection.prefixes[i];
     try {
       read.push({ source, roots: sourceRoots(source, !selection.multi), prefix });
+      for (const warning of encryptionWarnings(source)) warnings.push(`${sourceLabel(source, prefix)}: ${warning}`);
     } catch (e) {
       if (!selection.multi) throw e;
       warnings.push(`${sourceLabel(source, prefix)}: ${e instanceof Error ? e.message : String(e)}`);
