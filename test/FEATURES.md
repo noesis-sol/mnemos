@@ -357,8 +357,8 @@ root entry and that matrix in step.
 - **Untested**: the real `osascript`, `reg` and `xdg-settings` commands (`osascript` checked by
   hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11; the ProgIds of real
   LibreWolf, Zen and Floorp installs (taken from their installers' sources). These need the
-  real systems, so are checked by hand. `reg` in a spawned server: Windows starts it from
-  System32 before `PATH`, so a stub is never run.
+  real systems, so are checked by hand. `reg` in a spawned server: Node looks it up on `PATH`
+  as `reg.com` or `reg.exe` only and runs no `.cmd` without a shell, so a script cannot stub it.
 - **Tickets**: mnemos-5ij.3; mnemos-7uj; mnemos-gts.6
 
 ## Browser selection and sources
@@ -388,8 +388,8 @@ root entry and that matrix in step.
   with bookmarks, with the warning in every result; the stub naming Arc (macOS) or GNOME Web
   (Linux) gives every keyword tool the error naming it, `--browser <id>` and the browsers with
   bookmarks.
-- **Untested**: `default` in a spawned server on Windows (`reg` runs from System32 before `PATH`,
-  so it cannot be stubbed; the detection commands are tested in `test/default-browser.test.js`);
+- **Untested**: `default` in a spawned server on Windows (Node looks `reg` up as an `.exe` or `.com`
+  only, so a script cannot stub it; the detection commands are tested in `test/default-browser.test.js`);
   `semantic_search` with `default` in a spawned server (it shares the keyword tools' sources);
   several fetchers at once against real sites (their
   shared pool is tested with a fake fetch in `test/fetch-pool.test.js`; see Background page

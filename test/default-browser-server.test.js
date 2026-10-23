@@ -5,8 +5,9 @@
 // home holding an Edge and a Brave profile, so the browsers' default paths land
 // inside it and Edge, before Brave in BROWSERS order, is the fallback.
 //
-// Windows is skipped: execFileSync starts `reg` by name with CreateProcess,
-// which looks in System32 before PATH, so a stub on PATH is never run.
+// Windows is skipped: execFileSync looks `reg` up on PATH as reg.com or reg.exe
+// only, and runs no .cmd or .bat without a shell, so a script cannot stub it;
+// a stub would have to be a compiled executable.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -18,7 +19,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SERVER = path.join(ROOT, "dist", "index.js");
-const SKIP = process.platform === "win32" && "reg is found in System32 before PATH, so it cannot be stubbed";
+const SKIP = process.platform === "win32" && "reg is looked up as an .exe or .com only, so a script cannot stub it";
 
 /** This platform's detection command, and the answers its stub gives. */
 const COMMAND =
