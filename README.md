@@ -366,6 +366,11 @@ The index stays fresh on its own:
   page comes under `MNEMOS_SKIP_DOMAINS` or `MNEMOS_SKIP_FOLDERS` (the list
   edited, or the bookmark moved into a skipped folder), its text and passages
   do too.
+- Several mnemos servers (one per MCP client) share each bookmarks file's
+  index, and the one fetching applies its own skip lists. `semantic_search`
+  matches a page's text only if its own server's `MNEMOS_SKIP_DOMAINS` and
+  `MNEMOS_SKIP_FOLDERS` leave the page fetchable; otherwise the bookmark is
+  found by its title alone.
 
 A page that needs JavaScript to show anything is loaded again in a headless
 browser you already have — Chrome, Edge, Chromium or Brave, or the one

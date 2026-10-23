@@ -23,9 +23,16 @@
  * keyword hits only. A URL saved in several sources is one result, the
  * best-ranked of its bookmarks. The status adds the sources' progress and page
  * counts up.
+ *
+ * A bookmarks file's index, and the pages fetched into it, are shared by
+ * every mnemos process on the machine, and the one holding its fetcher lease
+ * applies its own skip lists. So page text is matched only for pages this
+ * process's MNEMOS_SKIP_DOMAINS / MNEMOS_SKIP_FOLDERS (ctx.env) leave
+ * fetchable: a page they cover is found by its title alone, with no snippet.
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
+import { fetchConfig, isSkippedDomain, isSkippedFolder, type FetchConfig } from "./fetch.js";
 import { fetchingDisabled, type Fetcher } from "./fetcher.js";
 import { bookmarkRows, type Indexer, type IndexerStatus, type IndexScores } from "./indexer.js";
 import * as lib from "./lib.js";
@@ -169,6 +176,30 @@ function combinedState(statuses: IndexerStatus[]): IndexerStatus["state"] {
   return order.find((state) => statuses.some((s) => s.state === state)) ?? "ready";
 }
 
+/**
+ * The URLs among `entries` whose pages this process's skip lists keep private:
+ * a skipped domain, or any of the URL's bookmarks in a skipped folder (the
+ * path as results show it, `prefix` first), as fetcher.ts applyPolicy decides.
+ */
+function skippedPages(entries: lib.Entry[], prefix: string, config: FetchConfig): Set<string> {
+  const skipped = new Set<string>();
+  if (config.skipDomains.length === 0 && config.skipFolders.length === 0) return skipped;
+  for (const { folder, node } of entries) {
+    const url = node.url ?? "";
+    if (skipped.has(url)) continue;
+    let host: string | undefined;
+    try {
+      host = new URL(url).hostname;
+    } catch {
+      // not a URL: never fetched
+    }
+    if (isSkippedFolder(prefix + folder, config) || (host !== undefined && isSkippedDomain(host, config))) {
+      skipped.add(url);
+    }
+  }
+  return skipped;
+}
+
 function sum(values: number[]): number {
   return values.reduce((total, n) => total + n, 0);
 }
@@ -209,6 +240,16 @@ export async function semanticSearch(
   });
   const indexes = [...new Set(parts.map((part) => part.index))];
   for (const { indexer } of indexes) indexer.checkForChanges();
+  // Per index, the pages whose text this process's skip lists keep out of its answers,
+  // whichever process fetched them; over every source on that index, as its fetcher sees them.
+  const config = fetchConfig(ctx.env ?? process.env);
+  const skipped = new Map<SourceIndex, Set<string>>();
+  for (const part of parts) {
+    const urls = skippedPages(part.entries, part.prefix, config);
+    const known = skipped.get(part.index);
+    if (known) for (const url of urls) known.add(url);
+    else skipped.set(part.index, urls);
+  }
   const keywordHit = lib.keywordMatcher(words);
 
   // Semantic scores, or the reason there are none. A model not started yet
@@ -239,12 +280,14 @@ export async function semanticSearch(
   const candidates: { entry: lib.Entry; part: number; keyword: boolean; score: number | null; page?: string }[] = [];
   for (const [at, part] of parts.entries()) {
     const scores = scored.get(part.index);
+    const hidden = skipped.get(part.index)!;
     part.entries.forEach((local, i) => {
       const entry = { folder: part.prefix + local.folder, node: local.node };
       if (filter && !lib.folderMatches(entry.folder, filter)) return;
       const keyword = keywordHit(entry);
       const title = scores?.titles.get(part.guids[i]);
-      const page = scores?.pages.get(entry.node.url ?? "");
+      const url = entry.node.url ?? "";
+      const page = hidden.has(url) ? undefined : scores?.pages.get(url);
       if (page !== undefined && (title === undefined || page.score > title)) {
         candidates.push({ entry, part: at, keyword, score: page.score, page: page.text });
       } else {

@@ -631,6 +631,9 @@ root entry and that matrix in step.
   one, and a `note` when the answer is keywords only or titles are still being embedded; a
   one-time `notice` when page fetching first starts. The query's vector is waited for at most 3 s (`QUERY_EMBED_TIMEOUT_MS`), then
   the answer falls back to keyword hits. Each call runs the indexer's `checkForChanges()`.
+  Page text is matched only for pages this process's `MNEMOS_SKIP_DOMAINS` /
+  `MNEMOS_SKIP_FOLDERS` leave fetchable (the index is shared, and its fetcher lease holder
+  applies its own lists): a page they cover is found by its title alone, with no snippet.
 - **Tests**: `test/semantic-search.test.js`: e2e (SDK client over stdio, fake embedder,
   temporary cache, a copy of the fixture with a Reading folder): the tool listed with its
   description and schema and named in the instructions; before titles are indexed, keyword
@@ -645,7 +648,11 @@ root entry and that matrix in step.
   the fake's synonyms; the relative cutoff (median and best). `test/semantic-margin-size.test.js`
   and `test/semantic-model-start.test.js` (next section); `test/semantic-page-states.test.js`,
   `test/page-fetcher.test.js` (the notice, `status.fetching`, `status.browser`) and
-  `test/page-chunks.test.js` (page matches) under their areas. `e2e/semantic.e2e.js` (see
+  `test/page-chunks.test.js` (page matches) under their areas. `test/semantic-skip-lists.test.js`
+  (in process, a fake home, page text stored as a holder with no skip list left it): a skipped
+  folder (a URL in it and elsewhere too), a domain or a wildcard keeps a page's text out while
+  other pages and keyword hits on the title stay; with `--browser chrome,brave`, a browser as a
+  skip folder hides its copy of a page and not the other browser's. `e2e/semantic.e2e.js` (see
   Suites): the installed package with the real model scores the golden queries of
   `e2e/fixtures/semantic` over titles and pages, in English and Greek.
 - **Untested**: the real model's cutoff on libraries other than the hand-calibrated one and the
@@ -653,7 +660,7 @@ root entry and that matrix in step.
   while the index is not open yet or could not be built, and the note while titles are still
   being embedded with the model ready (no test asserts their wording).
 - **Tickets**: mnemos-tc4.3; mnemos-tc4.10 (page chunks); mnemos-tc4.12 (acceptance over titles);
-  mnemos-gts.10 (the keyword-only notes)
+  mnemos-gts.10 (the keyword-only notes); mnemos-b01 (the asking process's skip lists)
 
 ## semantic_search: cutoff by library size, model start
 
