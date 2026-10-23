@@ -504,10 +504,14 @@ root entry and that matrix in step.
   count; with a parser that will not load, `acceptPdf: false` on every fetch and the parser
   tried once); e2e over MCP against a `node:http` fixture site: a PDF bookmark reaches `ok`, a
   query with words only in the PDF finds it `matched_on: "page"`, and a textless PDF is
-  `no_content`.
+  `no_content`. `test/pdf-unavailable-server.test.js` (e2e over MCP, the server spawned with a
+  `--import` resolve hook that makes `unpdf` unresolvable, against a `node:http` fixture site):
+  `pdfSupport` reports it unavailable; the server starts and answers; an HTML bookmark reaches
+  `ok`; a PDF bookmark is fetched with no `application/pdf` in `Accept` and ends `skipped`
+  (`not-html`), not failed, in `status.page_states`; `semantic_search` still finds the HTML page.
 - **Untested**: CJK text in predefined CMaps (not recovered: `pdfjs-dist`'s CMap files are not
   installed; a missing feature rather than a missing test); a PDF over 200 pages in full (the
-  page cap itself is tested); the server with `unpdf` uninstalled.
+  page cap itself is tested).
 - **Tickets**: mnemos-9xs; mnemos-wmk (the fetcher reads PDFs); mnemos-gts.8 (`unpdf`
   unresolvable); mnemos-gts.16 (the default 200-page cap)
 
