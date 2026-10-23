@@ -569,13 +569,19 @@ root entry and that matrix in step.
   before markers, their loader) is 30 days old and kept before, a folder installed long ago
   but loaded recently is kept by its marker, folders not named
   `transformers-*` and the one loaded are kept however old; a half-done removal is finished on
-  the next load; a library beside mnemos leaves the cache as it is. `e2e/semantic.e2e.js`: the
+  the next load; a library beside mnemos leaves the cache as it is.
+  `test/runtime-prune-in-use.test.js` (runtime folders laid out by hand, a stub npm on the PATH
+  for the reinstall): a running mnemos whose marker is 30 days old has its folder removed by
+  another version's load, and the library it imported goes on embedding; should its embedder
+  load again after a failure, with installing off it is `unavailable` for good, saying the
+  library could not be loaded, and writes nothing, and with installing on npm installs the
+  runtime again and `import()` returns the module it already had. `e2e/semantic.e2e.js`: the
   packed tarball installs without the library, and the first start installs it from the
   registry.
 - **Untested**: the install's timeout on Windows, where npm on the PATH runs through cmd.exe
-  (mnemos-abn), and the 15-minute default itself (tests pass a small `timeoutMs`); a mnemos that
-  runs over 30 days without reloading its runtime, whose folder another version's mnemos may
-  then remove under it; the download's progress events from the real library outside the e2e suites
+  (mnemos-abn), and the 15-minute default itself (tests pass a small `timeoutMs`); a runtime
+  folder pruned in use on Windows, where the real runtime's loaded onnxruntime DLL would keep it
+  from being renamed; the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
 - **Tickets**: mnemos-gts.9 (the install's timeout, npm on the PATH); mnemos-abn (the timeout
   on Windows); mnemos-gts.15 (a runtime
