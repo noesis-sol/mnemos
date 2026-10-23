@@ -352,12 +352,14 @@ root entry and that matrix in step.
   (`FirefoxURL-<hash>`, shared by Zen and Floorp) named by the executable their
   `shell\open\command` runs (a localized default value name included), Firefox without one, an
   unknown fork's executable an error.
+  `test/default-browser-server.test.js` (e2e, macOS and Linux): a spawned server running
+  `osascript` / `xdg-settings` by name, a stub first on `PATH` (see Browser selection and sources).
 - **Untested**: the real `osascript`, `reg` and `xdg-settings` commands (`osascript` checked by
   hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11; the ProgIds of real
   LibreWolf, Zen and Floorp installs (taken from their installers' sources). These need the
-  real systems, so are checked by hand; a spawned server with a stubbed command is
-  mnemos-gts.6 (see Browser selection and sources).
-- **Tickets**: mnemos-5ij.3; mnemos-7uj
+  real systems, so are checked by hand. `reg` in a spawned server: Windows starts it from
+  System32 before `PATH`, so a stub is never run.
+- **Tickets**: mnemos-5ij.3; mnemos-7uj; mnemos-gts.6
 
 ## Browser selection and sources
 
@@ -379,11 +381,20 @@ root entry and that matrix in step.
   `semantic_search` over two indexes ranked as one, progress added up, the prefix kept out of the
   index; over MCP, every tool's `sources` and `warnings` with a list, one source and no warnings
   with one browser, the instructions naming both, and `--profile` with a list stopping the server.
-- **Untested**: `default` detected for real in a spawned server (the detection commands are
-  tested in `test/default-browser.test.js`); several fetchers at once against real sites (their
+  `test/default-browser-server.test.js` (e2e over MCP, a fake home with an Edge and a Brave
+  profile, a stub of `osascript` (macOS) or `xdg-settings` (Linux) first on `PATH`): the stub
+  naming Brave makes every keyword tool read Brave's profile and name it in `sources`; the stub
+  failing (and, on macOS, LaunchServices' preferences unreadable) reads Edge, the first browser
+  with bookmarks, with the warning in every result; the stub naming Arc (macOS) or GNOME Web
+  (Linux) gives every keyword tool the error naming it, `--browser <id>` and the browsers with
+  bookmarks.
+- **Untested**: `default` in a spawned server on Windows (`reg` runs from System32 before `PATH`,
+  so it cannot be stubbed; the detection commands are tested in `test/default-browser.test.js`);
+  `semantic_search` with `default` in a spawned server (it shares the keyword tools' sources);
+  several fetchers at once against real sites (their
   shared pool is tested with a fake fetch in `test/fetch-pool.test.js`; see Background page
   fetching; real sites are not tested, by design).
-- **Tickets**: mnemos-5ij.5; mnemos-gts.6 (`default` in a spawned server)
+- **Tickets**: mnemos-5ij.5; mnemos-gts.6
 
 ## --browser all over every profile
 
