@@ -481,7 +481,10 @@ root entry and that matrix in step.
   synced into the index store, and only those without a vector (new, changed text, or a new
   model) are embedded, as `passage`, in batches of 32. `checkForChanges()` (for
   `semantic_search`) re-indexes, debounced, when the file's mtime or size changed or the last
-  run failed. Errors go to `status()` and stderr, never into a tool. The server-spawning tests
+  run failed; a poll started by `start()` does the same every 60 s (`CHANGE_POLL_MS`) when the
+  file changed since the last run read it, failed or not, so the store's bookmarks (and the
+  fetcher's pending pages) follow the file with no `semantic_search`; `close()` stops it.
+  Errors go to `status()` and stderr, never into a tool. The server-spawning tests
   set `MNEMOS_CACHE_DIR` to a temporary directory and `MNEMOS_EMBEDDER=fake`, so they never
   touch the user's cache or the real model.
 - **Tests**: `test/title-index.test.js`: e2e (SDK client over stdio, fake embedder, temporary
@@ -490,7 +493,9 @@ root entry and that matrix in step.
   embedded once; a second start embeds nothing; an added, a renamed and a deleted bookmark
   re-embed exactly the two changed texts. In process: `start()` reads nothing on the caller's
   turn, progress counts titles; three `checkForChanges()` calls on a changed file run one
-  re-index after the debounce and none on an unchanged one; a failing embedder, a missing
+  re-index after the debounce and none on an unchanged one; the poll alone re-indexes an
+  edited file, leaves an unchanged one and a failed run on the same file be, syncs an edited
+  file's rows while the embedder fails, and stops on `close()`; a failing embedder, a missing
   Bookmarks file and an unusable cache directory end in a `failed` status (logged once) and
   are retried by the next check; a new model revision re-embeds every title; row keys
   (Chromium guid, else folder, URL and copy number). `test/url-words.test.js` (unit):

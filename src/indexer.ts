@@ -15,9 +15,12 @@
  *
  * It re-runs when the Bookmarks file changes. There is no fs.watch: callers
  * (semantic_search) call checkForChanges(), which compares the file's mtime
- * and size with those of the last run and schedules a debounced re-index.
- * The page fetcher calls pagesChanged() when it stores a page, which
- * schedules a run of the page pass alone.
+ * and size with those of the last run and schedules a debounced re-index, and
+ * the indexer makes the same comparison itself every CHANGE_POLL_MS, so the
+ * store's bookmarks, and with them the pages the fetcher fetches, follow the
+ * file even when no semantic_search comes. The page fetcher calls
+ * pagesChanged() when it stores a page, which schedules a run of the page
+ * pass alone.
  *
  * Every error is caught and kept in status(); nothing here throws into a tool.
  */
@@ -36,6 +39,8 @@ export const TITLE_BATCH = 32;
 export const CHUNK_BATCH = 8;
 /** How long checkForChanges() waits before re-indexing, so a burst of calls runs it once. */
 export const REINDEX_DEBOUNCE_MS = 2_000;
+/** How often the indexer looks at the Bookmarks file's mtime and size for a change of its own accord. */
+export const CHANGE_POLL_MS = 60_000;
 
 /** At most this many URL words go into the text, so a long URL cannot crowd the title out. */
 const MAX_URL_WORDS = 32;
@@ -191,6 +196,8 @@ export interface IndexerOptions {
   /** Where the index lives; defaults to the store's cacheDir(). */
   dir?: string;
   debounceMs?: number;
+  /** How often to look for a changed Bookmarks file; defaults to CHANGE_POLL_MS. */
+  pollMs?: number;
   /** Clock in ms since the epoch, for tests. */
   now?: () => number;
 }
@@ -223,6 +230,7 @@ export class Indexer {
   private readonly entries: () => Iterable<lib.Entry>;
   private readonly dir: string | undefined;
   private readonly debounceMs: number;
+  private readonly pollMs: number;
   private readonly now: () => number;
 
   private store: IndexStore | undefined;
@@ -230,6 +238,9 @@ export class Indexer {
   private current: IndexerStatus = { state: "not_started", titles_done: 0, titles_total: 0 };
   /** The file as the last complete run read it; undefined until one completes. */
   private indexedSignature: string | undefined;
+  /** The file as the last run read it, complete or not; undefined until one starts. */
+  private readSignature: string | undefined;
+  private poll: NodeJS.Timeout | undefined;
   private running: Promise<void> | undefined;
   /** What to run once the run in progress ends: nothing, the page pass, or everything. */
   private again: "none" | "pages" | "full" = "none";
@@ -243,6 +254,7 @@ export class Indexer {
     this.entries = options.entries ?? (() => lib.allBookmarks());
     this.dir = options.dir;
     this.debounceMs = options.debounceMs ?? REINDEX_DEBOUNCE_MS;
+    this.pollMs = options.pollMs ?? CHANGE_POLL_MS;
     this.now = options.now ?? Date.now;
   }
 
@@ -283,9 +295,15 @@ export class Indexer {
     }
   }
 
-  /** Starts the first run on a later turn of the event loop, so the caller (the handshake) goes first. */
+  /**
+   * Starts the first run on a later turn of the event loop, so the caller (the
+   * handshake) goes first, then looks for a changed file every pollMs.
+   */
   start(): void {
     this.schedule(0, true);
+    if (this.poll) return;
+    this.poll = setInterval(() => this.pollForChanges(), this.pollMs);
+    this.poll.unref();
   }
 
   /**
@@ -319,11 +337,26 @@ export class Indexer {
     }
   }
 
-  /** Stops scheduled runs and closes the store; a run in progress stops at its next batch. */
+  /** Stops scheduled runs and the poll and closes the store; a run in progress stops at its next batch. */
   close(): void {
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
+    if (this.poll) clearInterval(this.poll);
+    this.poll = undefined;
     this.closeStore();
+  }
+
+  /**
+   * Schedules a re-index if the Bookmarks file changed since the last run read
+   * it. Unlike checkForChanges(), it does not retry a run that failed on the
+   * same file: the next semantic_search does, under the embedder's backoff.
+   */
+  private pollForChanges(): void {
+    try {
+      if (fileSignature(this.bookmarksFile()) !== this.readSignature) this.schedule(this.debounceMs, true);
+    } catch (err) {
+      this.fail(err);
+    }
   }
 
   /** A run after `delayMs`, unless one is already scheduled; `full` includes the titles. */
@@ -393,6 +426,7 @@ export class Indexer {
     // Taken before the read, so a change made while this run reads or embeds
     // is seen by the next checkForChanges().
     const signature = fileSignature(file);
+    this.readSignature = signature;
     this.current = { ...this.current, state: "indexing" };
     let store: IndexStore;
     try {

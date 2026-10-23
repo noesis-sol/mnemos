@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The semantic index follows bookmarks you add, rename, move or delete within about a minute, without waiting for a `semantic_search` call. Before, it was re-synced only at startup and by `semantic_search`, so a new bookmark's page was not fetched until one of them came.
+
 ## 0.5.0 (2026-10-14)
 
 Semantic search over your bookmarks and the pages they point to, and bookmarks from every major browser. Several changes are breaking — see *Upgrading from 0.3* in the README. To stay on 0.3, use `mnemos-mcp@0.3` in your MCP configuration.

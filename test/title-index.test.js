@@ -3,8 +3,9 @@
 // temporary MNEMOS_CACHE_DIR, on a copy of the fixture): the handshake and
 // tool calls do not wait for indexing, every bookmark gets a vector, a restart
 // embeds nothing, and an edited file re-embeds only what changed. In process
-// (dist/indexer.js): checkForChanges() and its debounce, and errors kept in
-// status() rather than thrown.
+// (dist/indexer.js): checkForChanges() and its debounce, the poll that
+// re-indexes an edited file with no call at all, and errors kept in status()
+// rather than thrown.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -285,6 +286,61 @@ test("indexer: checkForChanges re-indexes once, after the debounce, only when th
   assert.deepEqual(embedder.texts.slice(fixtureCount), ["Mail\nBookmarks Bar\nmail google"]);
   assert.equal(indexer.status().state, "ready");
   indexer.close();
+});
+
+test("indexer: the poll re-indexes an edited file with no checkForChanges, leaves an unchanged one be, and stops on close", async () => {
+  const s = scratch();
+  const embedder = countingEmbedder();
+  const { indexer, reads } = inProcessIndexer(s, embedder, { pollMs: 10 });
+  indexer.start();
+  await indexer.idle();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await indexer.idle();
+  assert.equal(reads(), 1, "an unchanged file is not read again");
+
+  editBookmarks(s.bookmarks, (data) => {
+    data.roots.bookmark_bar.children.find((n) => n.name === "Gmail").name = "Mail";
+  });
+  await until(() => reads() === 2, "the poll to re-index");
+  await indexer.idle();
+  assert.deepEqual(embedder.texts.slice(fixtureCount), ["Mail\nBookmarks Bar\nmail google"]);
+  assert.equal(indexer.status().state, "ready");
+
+  indexer.close();
+  editBookmarks(s.bookmarks, (data) => {
+    data.roots.bookmark_bar.children.find((n) => n.name === "Mail").name = "Gmail";
+  });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(reads(), 2, "no poll after close()");
+});
+
+test("indexer: the poll leaves a failed run on the same file to the next check, but syncs an edited file while embedding fails", async () => {
+  const s = scratch();
+  const embedder = countingEmbedder();
+  embedder.fail = "model went missing";
+  const { indexer, reads } = inProcessIndexer(s, embedder, { pollMs: 10 });
+  const consoleError = console.error;
+  console.error = () => {};
+  try {
+    indexer.start();
+    await indexer.idle();
+    assert.equal(indexer.status().state, "failed");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await indexer.idle();
+    assert.equal(reads(), 1, "a failed run on an unchanged file is not retried by the poll");
+
+    editBookmarks(s.bookmarks, (data) => {
+      data.roots.bookmark_bar.children.find((n) => n.name === "Gmail").name = "Mail";
+    });
+    await until(() => reads() === 2, "the poll to re-index");
+    await indexer.idle();
+    assert.equal(indexer.status().state, "failed");
+    const titles = readIndex(s).rows.map((row) => row.title);
+    assert.ok(titles.includes("Mail") && !titles.includes("Gmail"), "the store's bookmarks follow the file");
+  } finally {
+    console.error = consoleError;
+    indexer.close();
+  }
 });
 
 test("indexer: errors land in status(), never in the caller, and the next check retries", async () => {

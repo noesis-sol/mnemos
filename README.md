@@ -331,6 +331,10 @@ fetches. Set `MNEMOS_FETCH_PAGES=0` to turn all of it off.
 
 The index stays fresh on its own:
 
+- Bookmarks you add, rename, move or delete reach the index within about a
+  minute, with or without a `semantic_search`: mnemos looks at the bookmarks
+  file's modification time and size every minute, embeds only what changed,
+  and queues new bookmarks' pages for fetching.
 - A page that was read is fetched again 30 days later, and embedded again only
   if its text changed.
 - A page that fails (or whose site refuses) is retried after 1 hour, 6 hours,
@@ -411,8 +415,9 @@ Every plain fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
   browser's throwaway profile, and npm keeps the runtime's packages in your
   own npm cache (`~/.npm` by default; `npm cache clean --force` empties it).
 - **Fresh.** The keyword tools re-read the bookmarks file on every call that
-  finds it changed (its modification time or size); `semantic_search` re-syncs
-  the index when it finds the file has changed.
+  finds it changed (its modification time or size); the index is re-synced
+  when `semantic_search` finds the file has changed, and within a minute of
+  the change otherwise.
 - **One context.** Everything mnemos reads goes to your MCP client together:
   with `--browser all`, that is every browser's and every profile's bookmarks,
   work and personal alike. Choose with `--browser` and `--profile` what it may
