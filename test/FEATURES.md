@@ -20,13 +20,12 @@ fetch any.
 
 | Suite | Runner | Command | What it runs |
 |-------|--------|---------|--------------|
-| dependencies | `scripts/check-fast.sh` | `npm ci --ignore-scripts` | only when `node_modules` is missing or older than `package-lock.json` |
 | build | `scripts/check-fast.sh` | `npm run build` | `tsc`, type-checks `src/` |
-| unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (about 500 tests, ~23s, most of it servers started over stdio and pages fetched one per second) |
+| unit tests | `scripts/check-fast.sh` | `npm test` | builds, then `node --test`, which finds `test/*.test.js` itself (658 tests, ~26s, most of it servers started over stdio and pages fetched one per second) |
 | published package (e2e) | `scripts/check-full.sh` | `node --test e2e/package.e2e.js` | `npm pack --json` into a scratch directory (runs `prepare`, so builds again), unpacks the tarball with `tar`, checks its files and bin, starts the server through the bin (4 tests, ~2s) |
 | old Node (e2e) | CI's `old-node` job (Node 20) | `node --test e2e/old-node.e2e.js` | starts the bin (`dist/cli.js`) on the Node running it; on a Node older than 22.13 checks the explaining server's handshake, instructions and a tool's `isError` (1 test, ~1s), on a supported Node skips |
-| embedding model (e2e, opt-in) | `scripts/check-full.sh` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages, and checks a text's vector is the same alone and in a batch (3 tests, ~30s with the download) |
-| semantic search acceptance (e2e) | `scripts/check-full.sh` (only with `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (43 bookmarks pointing at a local fixture site that serves what `pages.json` says) with the real model. Titles, with fetching off: waits for them, scores the title queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache. Pages, with fetching on and an installed browser (none fails it in CI, `$CI` set; elsewhere its checks are skipped): waits on `status.page_states` until every page is final and embedded, checks the state of each kind of page, proves from the site's request log that token-like, unsubscribe, `MNEMOS_SKIP_FOLDERS` and redirected-to-a-blocked-host URLs were never requested while their titles are found, scores the full query set (page queries `matched_on: "page"` with the topic in the snippet). Freshness: adds, then deletes and renames, bookmarks while the server runs. Prints a report and appends it to `$GITHUB_STEP_SUMMARY` (9 tests, ~2.5 min with the model in `MNEMOS_E2E_MODEL_CACHE`, most of it the pages fetched one per second) |
+| embedding model (e2e, opt-in) | `scripts/check-full.sh`, which sets `MNEMOS_E2E_MODEL=1` | `node --test e2e/model.e2e.js` | skipped unless `MNEMOS_E2E_MODEL=1`; then downloads the real model (about 135 MB) into a temporary cache directory and ranks an English query against Greek passages, and checks a text's vector is the same alone and in a batch (3 tests, ~30s with the download) |
+| semantic search acceptance (e2e) | `scripts/check-full.sh` (which sets `MNEMOS_E2E_MODEL=1`), `.github/workflows/semantic.yml` | `node --test e2e/semantic.e2e.js` | packs the tarball, `npm install`s it into a clean directory from the registry, starts the installed bin on `e2e/fixtures/semantic/Bookmarks` (43 bookmarks pointing at a local fixture site that serves what `pages.json` says) with the real model. Titles, with fetching off: waits for them, scores the title queries of `queries.json` (every `must` query in the top 3, MRR ≥ 0.8), restarts on the same cache. Pages, with fetching on and an installed browser (none fails it in CI, `$CI` set; elsewhere its checks are skipped): waits on `status.page_states` until every page is final and embedded, checks the state of each kind of page, proves from the site's request log that token-like, unsubscribe, `MNEMOS_SKIP_FOLDERS` and redirected-to-a-blocked-host URLs were never requested while their titles are found, scores the full query set (page queries `matched_on: "page"` with the topic in the snippet). Freshness: adds, then deletes and renames, bookmarks while the server runs. Prints a report and appends it to `$GITHUB_STEP_SUMMARY` (9 tests, ~2.5 min with the model in `MNEMOS_E2E_MODEL_CACHE`, ~2 min 40 s without it, as `scripts/check-full.sh` runs it, downloading the model into its scratch cache; most of it the pages fetched one per second) |
 
 `npm test` runs `node --test` with no file arguments, so Node's runner discovers the test
 files: a new file named `test/<feature>.test.js` runs with no edit to `package.json`. On every
@@ -37,12 +36,16 @@ keep test files out of `src/` (tsc would copy them into `dist/`, where they woul
 Suites too slow for `npm test` live in `e2e/` with names none of those patterns match
 (`<feature>.e2e.js`), and `scripts/check-full.sh` runs each by path.
 
-Runner times on macOS, Node 24, with `node_modules` installed (2026-10-13):
+Runner times on macOS, Node 24, with `node_modules` installed and `TUTTI_CORES=5`, which
+check-fast passes on as `--test-concurrency` (2026-10-23):
 
-- `scripts/check-fast.sh`: about 25s warm (the first run after a build cache miss is slowest)
-- `scripts/check-full.sh`: about 29s warm without `MNEMOS_E2E_MODEL` (check-fast, then packs,
-  unpacks and starts the package; the two model suites skip); with `MNEMOS_E2E_MODEL=1`, add
-  about 30s for the model e2e and 2.5 min for the semantic search acceptance
+- `scripts/check-fast.sh`: 28–30s over three runs (build, then 658 tests in ~26s)
+- `scripts/check-full.sh`: about 3 min 40 s: check-fast (~30s), the published package (~2s),
+  the embedding model (~30s, most of it the model's download into a fresh cache) and the
+  semantic search acceptance (~2 min 40 s, most of it pages fetched one per second); both model
+  suites run, since the runner sets `MNEMOS_E2E_MODEL=1`, so check-full needs the network (the
+  model from Hugging Face, the package's dependencies and the embedding runtime from npm's
+  registry)
 
 CI (`.github/workflows/ci.yml`) runs `npm ci`, `npm test` and `node --test e2e/package.e2e.js`
 on ubuntu, macOS and Windows with Node 22 and 24, and in its `old-node` job `npm ci`, `npm run
@@ -70,7 +73,7 @@ root entry and that matrix in step.
   on Node 20 in CI.
 - **Untested**: Node 18 (the MCP SDK's minimum; `cli.ts` and `unsupported-node.ts` avoid newer
   builtins, but no CI job runs 18).
-- **Tickets**: mnemos-nru
+- **Tickets**: mnemos-nru; mnemos-gts.13 (Node 18 in CI)
 
 ## MCP server start and handshake
 
@@ -105,7 +108,8 @@ root entry and that matrix in step.
   `test/null-children.test.js` (unit and e2e): null, string and number entries in `children`
   arrays are skipped by the tree walk, so every keyword tool, and all six tools over MCP
   (`semantic_search`'s title index included), answer without them (GitHub #2).
-- **Untested**: the `folder` argument over the wire.
+- **Untested**: nothing known (`test/server-errors.test.js` drives a `folder`-filtered search
+  over the wire; see Tool errors over MCP).
 - **Tickets**: mnemos-2gg.11 (the `folder` argument over the wire)
 
 ## list_folders
@@ -117,7 +121,8 @@ root entry and that matrix in step.
   reports zero. `test/folders-edges.test.js` (unit): folders sorted by name with `localeCompare`;
   a root key other than `bookmark_bar`, `other` or `synced` labelled with its key; a folder with
   no `name`; two sibling folders with the same name merging into one row with summed counts.
-- **Untested**: a successful call over the wire (only the error path is driven through MCP).
+- **Untested**: nothing known (`test/server-errors.test.js` checks a successful `list_folders`
+  over the wire after the failed calls).
 - **Tickets**: mnemos-2gg.11 (a successful call over the wire)
 
 ## list_folder_contents
@@ -190,8 +195,15 @@ root entry and that matrix in step.
   profile's display name; Firefox's default from `installs.ini`, passing over a `Default` that
   names no listed profile, else `Default=1`; Firefox `Name=` exactly or ignoring case; the
   missing-profile errors of both listing `Display Name (directory)`.
-- **Untested**: `Local State` and `installs.ini` from real installs with several profiles.
-- **Tickets**: mnemos-5ij.4
+  `test/browser-flags.test.js` (unit and e2e): flag parsing (spaced and `=` forms, unknown
+  browser, flag or positional); `--browser` over `MNEMOS_BOOKMARKS_BROWSER`, `--profile` over
+  `MNEMOS_PROFILE` over `CHROME_PROFILE`, `MNEMOS_BOOKMARKS_PATH` over `CHROME_BOOKMARKS_PATH`
+  over the flags; a Firefox profile by flag; the missing-profile error listing the flag's
+  browser's profiles; the built server reading the flags' browser and profile over the
+  environment, and exiting with status 2 on an unknown `--browser`.
+- **Untested**: `Local State` and `installs.ini` from real installs with several profiles (by
+  hand only: no fixture can stand in for an install).
+- **Tickets**: mnemos-5ij.4; mnemos-5ij.1 (the flags)
 
 ## Chrome account bookmarks (AccountBookmarks)
 
@@ -238,13 +250,8 @@ root entry and that matrix in step.
   and reopen). Two processes sharing the lease are driven by `test/page-fetcher.test.js` (two
   servers on one cache: only one fetches, each page once); a lease lapsing while its holder
   still runs is not (see Background page fetching).
-  `test/browser-flags.test.js` (unit and e2e): flag parsing (spaced and `=` forms, unknown
-  browser, flag or positional); `--browser` over `MNEMOS_BOOKMARKS_BROWSER`, `--profile` over
-  `MNEMOS_PROFILE` over `CHROME_PROFILE`, `MNEMOS_BOOKMARKS_PATH` over `CHROME_BOOKMARKS_PATH`
-  over the flags; a Firefox profile by flag; the missing-profile error listing the flag's
-  browser's profiles; the built server reading the flags' browser and profile over the
-  environment, and exiting with status 2 on an unknown `--browser`.
-- **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once); mnemos-5ij.1
+- **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once);
+  mnemos-gts.5 (corrupted while open)
 
 ## Other browsers and descriptions
 
@@ -290,10 +297,13 @@ root entry and that matrix in step.
   missing-file and unknown-profile errors naming the fork; macOS bundle ids, Waterfox's ProgId and
   Linux `.desktop` names mapping to each fork.
 - **Untested**: real browsers' files (checked by hand on macOS against Chrome, Firefox and
-  Safari libraries on 2026-10-13); the "needs Node 22.13" error on older Node; Vivaldi's Trash
+  Safari libraries on 2026-10-13); the "needs Node 22.13" error for Firefox on older Node
+  (`src/browsers.ts`; not reached through the bin, which serves the unsupported-Node server on
+  such a Node); Vivaldi's Trash
   marker (`meta_info.Trash`) against a real Vivaldi file; Edge, Brave and Vivaldi on Windows and
   Linux; Opera, Chrome's channels and the Snap and Flatpak directories against real installs;
   Firefox's forks against real installs, and their Windows ProgIds (only Waterfox's is mapped).
+  Real installs can be checked only by hand, so no ticket tests them.
 - **Tickets**: mnemos-xp1; mnemos-5ij.1; mnemos-5ij.2
 
 ## System default browser
@@ -320,7 +330,9 @@ root entry and that matrix in step.
   unknown fork's executable an error.
 - **Untested**: the real `osascript`, `reg` and `xdg-settings` commands (`osascript` checked by
   hand on macOS on 2026-10-14); `UserChoiceLatest` on a real Windows 11; the ProgIds of real
-  LibreWolf, Zen and Floorp installs (taken from their installers' sources).
+  LibreWolf, Zen and Floorp installs (taken from their installers' sources). These need the
+  real systems, so are checked by hand; a spawned server with a stubbed command is
+  mnemos-gts.6 (see Browser selection and sources).
 - **Tickets**: mnemos-5ij.3; mnemos-7uj
 
 ## Browser selection and sources
@@ -345,8 +357,9 @@ root entry and that matrix in step.
   with one browser, the instructions naming both, and `--profile` with a list stopping the server.
 - **Untested**: `default` detected for real in a spawned server (the detection commands are
   tested in `test/default-browser.test.js`); several fetchers at once against real sites (their
-  shared pool is tested with a fake fetch in `test/fetch-pool.test.js`; see Background page fetching).
-- **Tickets**: mnemos-5ij.5
+  shared pool is tested with a fake fetch in `test/fetch-pool.test.js`; see Background page
+  fetching; real sites are not tested, by design).
+- **Tickets**: mnemos-5ij.5; mnemos-gts.6 (`default` in a spawned server)
 
 ## --browser all over every profile
 
@@ -367,8 +380,9 @@ root entry and that matrix in step.
   still mid-write; the cache returning the same parse for an unchanged file, re-reading after a
   change of size or of mtime alone, never keeping an error, and Firefox re-read when its WAL
   changes; over MCP, `--browser all` with two Chrome profiles.
-- **Untested**: real multi-profile installs; a Firefox database locked by a running Firefox.
-- **Tickets**: mnemos-5ij.6
+- **Untested**: real multi-profile installs (by hand only); a Firefox database locked by a
+  running Firefox.
+- **Tickets**: mnemos-5ij.6; mnemos-gts.7 (a locked Firefox database)
 
 ## Page fetch policy and safe fetch
 
@@ -398,7 +412,7 @@ root entry and that matrix in step.
   headers and body; non-HTML skipped (and PDFs with `acceptPdf: false`); XHTML, charset and gzip
   decoding; 403/429 refused once with `Retry-After`; the request headers.
 - **Untested**: Brotli and deflate bodies; IPv6 connections (the servers listen on IPv4 only).
-- **Tickets**: mnemos-tc4.8
+- **Tickets**: mnemos-tc4.8; mnemos-gts.3 (Brotli, deflate, IPv6)
 
 ## PDF bookmarks
 
@@ -430,8 +444,10 @@ root entry and that matrix in step.
   query with words only in the PDF finds it `matched_on: "page"`, and a textless PDF is
   `no_content`.
 - **Untested**: CJK text in predefined CMaps (not recovered: `pdfjs-dist`'s CMap files are not
-  installed); a PDF over 200 pages in full; the server with `unpdf` uninstalled.
-- **Tickets**: mnemos-9xs; mnemos-wmk (the fetcher reads PDFs)
+  installed; a missing feature rather than a missing test); a PDF over 200 pages in full (the
+  page cap itself is tested); the server with `unpdf` uninstalled.
+- **Tickets**: mnemos-9xs; mnemos-wmk (the fetcher reads PDFs); mnemos-gts.8 (`unpdf`
+  unresolvable)
 
 ## Embedder
 
@@ -490,6 +506,7 @@ root entry and that matrix in step.
   reloading its runtime, whose folder another version's mnemos may then remove under it; npm on the PATH as the last resort (only the
   choice of it is unit-tested); the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
+- **Tickets**: mnemos-gts.9 (the install's timeout, npm on the PATH)
 
 ## Background title indexing
 
@@ -574,7 +591,8 @@ root entry and that matrix in step.
   31-bookmark fixture (see `MODEL_RELEVANCE` in `src/embedder.ts`); the keyword-only answers
   while the index is not open yet or could not be built, and the note while titles are still
   being embedded with the model ready (no test asserts their wording).
-- **Tickets**: mnemos-tc4.3; mnemos-tc4.10 (page chunks); mnemos-tc4.12 (acceptance over titles)
+- **Tickets**: mnemos-tc4.3; mnemos-tc4.10 (page chunks); mnemos-tc4.12 (acceptance over titles);
+  mnemos-gts.10 (the keyword-only notes)
 
 ## semantic_search: cutoff by library size, model start
 
@@ -647,9 +665,10 @@ root entry and that matrix in step.
   installed package with the real model brings every kind of page to its final state, and never
   requests the URLs the policy skips.
 - **Untested**: the lease lapsing while a holder still runs (another process taking it over
-  mid-fetch); real websites; the worker dying mid-page.
+  mid-fetch); real websites (not tested, by design); the worker dying mid-page.
 - **Tickets**: mnemos-tc4.9; mnemos-dbz (new bookmarks before refreshes); mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
-  mnemos-tc4.5 (`no_content` pages through a headless browser); mnemos-nma (one pool over every source's fetcher)
+  mnemos-tc4.5 (`no_content` pages through a headless browser); mnemos-nma (one pool over every source's fetcher);
+  mnemos-gts.4 (the lease changing holders); mnemos-gts.11 (the worker dying)
 
 ## Index freshness
 
@@ -679,7 +698,8 @@ root entry and that matrix in step.
   and a renamed one is found by its new title, each waited for on the status.
 - **Untested**: two processes with different skip lists taking the lease in turn (each change
   of holder retries the `needs_login` and skipped pages once).
-- **Tickets**: mnemos-tc4.4; mnemos-tc4.13 (acceptance on GitHub)
+- **Tickets**: mnemos-tc4.4; mnemos-tc4.13 (acceptance on GitHub); mnemos-gts.4 (skip lists
+  across lease holders)
 
 ## Page chunks
 
@@ -708,8 +728,8 @@ root entry and that matrix in step.
   re-fetches both pages, the unchanged one is not embedded again and the changed one is.
   `e2e/semantic.e2e.js` (see Suites): the real model on page chunks: English and Greek pages
   found only through their body, across languages both ways, with the topic in the snippet.
-- **Untested**: two
-  processes embedding the same chunks at once (harmless: the same vectors are written twice).
+- **Untested**: two processes embedding the same chunks at once (harmless: the same vectors are
+  written twice; no ticket).
 - **Tickets**: mnemos-tc4.10; mnemos-tc4.4 (re-fetching after 30 days); mnemos-tc4.13
 
 ## Headless browser rendering
@@ -749,12 +769,22 @@ root entry and that matrix in step.
   none is found): a page that builds its text with JavaScript ends `ok` with it; its requests
   to a blocked host, direct and through a redirect, never arrive; images are not loaded; the
   temporary profile is gone after close.
+  `test/headless-redirect.test.js` (e2e, a real installed browser; skipped likewise): a page
+  that redirects in two hops to a token-like logout URL is skipped token-like and the URL never
+  requested; a redirect to an allowed page renders there; a script or meta refresh navigating
+  to the logout URL is skipped, not stored as Chrome's error page; a script navigating to a host
+  that does not resolve is refused (http) or failed (https).
+  `test/shared-renderer.test.js` (in process, a fake renderer): one browser shared by the
+  fetchers of several bookmarks files (`SharedRenderer`), closed only when its last user closes
+  it, a user that renders without launching counted too; two sources' `Fetcher`s launch it once
+  and close it once neither has a page for it.
   `e2e/semantic.e2e.js` (see Suites): the installed package renders a JavaScript-only page in
   the runner's Chrome and finds it by its text; with `MNEMOS_BROWSER=0` in CI it fails.
 - **Untested**: Windows and Linux browsers outside `.github/workflows/semantic.yml` (ubuntu on
   every push and pull request, macOS and Windows weekly); a browser that crashes mid-page; the
   20 s limit with a real slow page.
-- **Tickets**: mnemos-tc4.5; mnemos-g70 (needs_browser pages queued once after 30 days)
+- **Tickets**: mnemos-tc4.5; mnemos-g70 (needs_browser pages queued once after 30 days);
+  mnemos-o3a (one browser shared across sources); mnemos-gts.12 (a crash or hang mid-page)
 
 ## Tool errors over MCP
 
@@ -797,6 +827,8 @@ root entry and that matrix in step.
   (the tarball stores it `0644`), the unpacked package starts through its bin, spawned directly
   on POSIX to exercise the shebang and with `process.execPath` on Windows, and the SDK `Client`
   gets `serverInfo` named `mnemos` from `initialize` and the six tools from `tools/list`.
-- **Untested**: `npm publish` itself and a real `npx -y mnemos-mcp` install from the registry;
-  the Windows `npm` shim that runs the bin.
+- **Untested**: `npm publish` itself and a real `npx -y mnemos-mcp` install from the registry
+  (`e2e/semantic.e2e.js` installs the packed tarball with its dependencies from the registry);
+  the Windows `npm` shim that runs the bin (`e2e/semantic.e2e.js` spawns node on the bin target
+  instead, since a test could only end the shim's `cmd.exe`, not the server; no ticket).
 - **Tickets**: mnemos-2gg.12
