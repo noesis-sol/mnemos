@@ -246,15 +246,28 @@ export function isCorrupt(err: unknown): boolean {
   return /file is not a database|database disk image is malformed/i.test(String(e?.message));
 }
 
-/** Runs `fn` in a write transaction taken up front, so two processes opening at once take turns. */
-function immediate<T>(db: DatabaseSync, fn: () => T): T {
+/**
+ * Runs `fn` in a write transaction taken up front, so two processes opening at
+ * once take turns. On SQLITE_FULL, SQLITE_IOERR, SQLITE_BUSY or SQLITE_NOMEM,
+ * SQLite may already have rolled the transaction back itself, and ROLLBACK
+ * would then fail with "no transaction is active": roll back only while one
+ * is open, and always throw the error that ended the transaction.
+ */
+export function immediate<T>(db: DatabaseSync, fn: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
     const result = fn();
     db.exec("COMMIT");
     return result;
   } catch (err) {
-    db.exec("ROLLBACK");
+    // isTransaction is undefined before Node 22.16: try ROLLBACK there too.
+    if (db.isTransaction !== false) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        // already rolled back; err is the one to report
+      }
+    }
     throw err;
   }
 }

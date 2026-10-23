@@ -267,12 +267,15 @@ root entry and that matrix in step.
   between two stores on one file. `test/index-open-race.test.js` (child processes on one cache
   directory, released at one shared moment): several processes opening one new index at once
   all open it, none fails with "database is locked", and the file ends in WAL mode.
+  `test/index-store-rollback.test.js`: a write transaction that SQLite rolls back itself on a
+  full disk (`PRAGMA max_page_count`) rethrows "database or disk is full" with its errcode, not
+  ROLLBACK's "no transaction is active"; one that fails while still open is rolled back.
 - **Untested**: corruption that appears while a store is open (callers see `isCorrupt` errors
   and reopen). Two processes sharing the lease are driven by `test/page-fetcher.test.js` (two
   servers on one cache: only one fetches, each page once); a lease lapsing while its holder
   still runs is not (see Background page fetching).
 - **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once);
-  mnemos-gts.5 (corrupted while open)
+  mnemos-gts.5 (corrupted while open); mnemos-xf3 (the error behind a failed transaction)
 
 ## Other browsers and descriptions
 
