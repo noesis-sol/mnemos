@@ -16,7 +16,8 @@ npm run build
 )
 
 # unit tests, from package.json:16
+# node --test runs its files side by side; TUTTI_CORES, where set, is this run's share of the cores.
 printf '%s\n' 'SUITE: unit tests'
 (
-npm test
+npm test ${TUTTI_CORES:+-- --test-concurrency=$TUTTI_CORES}
 )
