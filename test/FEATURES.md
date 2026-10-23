@@ -551,10 +551,15 @@ root entry and that matrix in step.
   and cuts a long one to 300 characters at a word boundary (or at the limit, never inside a
   surrogate pair); in `embeddingText` the folder path and URL words still follow it, and the
   stored description stays whole.
+  `test/semantic-live-edits.test.js`: e2e (SDK client over stdio, fake embedder, temporary
+  cache, a copy of the fixture): with the server running, `semantic_search` (which calls
+  `checkForChanges()`) finds a bookmark added to the file by its title, a renamed one by its
+  new title and not its old (queries with no keyword hit, so `matched_on: "title"` comes from
+  the re-indexed vectors), and a deleted one no more, each waited for by polling the tool's
+  status with a deadline.
 - **Untested**: the real model indexing titles outside `e2e/semantic.e2e.js` (which also
-  checks a restart reports every title done and embeds none again, and that bookmarks added,
-  deleted and renamed while the server runs are found through `semantic_search`, which calls
-  `checkForChanges()`); that path over MCP in `npm test`.
+  checks a restart reports every title done and embeds none again, and the same edits while
+  the server runs with the real model).
 - **Tickets**: mnemos-tc4.7; mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`);
   mnemos-tc4.13 (acceptance on GitHub); mnemos-gts.14 (edits while the server runs, over MCP)
 
