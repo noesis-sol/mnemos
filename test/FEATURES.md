@@ -508,9 +508,11 @@ root entry and that matrix in step.
   `pdfSupport` reports it unavailable; the server starts and answers; an HTML bookmark reaches
   `ok`; a PDF bookmark is fetched with no `application/pdf` in `Accept` and ends `skipped`
   (`not-html`), not failed, in `status.page_states`; `semantic_search` still finds the HTML page.
+  `test/pdf-page-cap.test.js` (unit, real `unpdf`, long PDFs built in memory, the default caps):
+  a 250-page PDF has the marker words of pages 1-200 and none after, `truncated`; a 200-page PDF
+  is read whole; a 250-page PDF of long pages stops at the 200,000-character cap before page 200.
 - **Untested**: CJK text in predefined CMaps (not recovered: `pdfjs-dist`'s CMap files are not
-  installed; a missing feature rather than a missing test); a PDF over 200 pages in full (the
-  page cap itself is tested).
+  installed; a missing feature rather than a missing test).
 - **Tickets**: mnemos-9xs; mnemos-wmk (the fetcher reads PDFs); mnemos-gts.8 (`unpdf`
   unresolvable); mnemos-gts.16 (the default 200-page cap)
 
