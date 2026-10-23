@@ -190,7 +190,8 @@ export interface IndexerStatus {
 
 export interface IndexScores {
   titles: Map<string, number>;
-  pages: Map<string, { score: number; text: string }>;
+  /** final_url: where the page's text was fetched from, after redirects (null when not recorded). */
+  pages: Map<string, { score: number; text: string; final_url: string | null }>;
 }
 
 export interface IndexerOptions {

@@ -28,7 +28,8 @@
  * every mnemos process on the machine, and the one holding its fetcher lease
  * applies its own skip lists. So page text is matched only for pages this
  * process's MNEMOS_SKIP_DOMAINS / MNEMOS_SKIP_FOLDERS (ctx.env) leave
- * fetchable: a page they cover is found by its title alone, with no snippet.
+ * fetchable (its bookmark's URL, and the URL a redirect took its fetch to): a
+ * page they cover is found by its title alone, with no snippet.
  */
 
 import type { EmbedderStatus, Embedder, Relevance } from "./embedder.js";
@@ -176,6 +177,16 @@ function combinedState(statuses: IndexerStatus[]): IndexerStatus["state"] {
   return order.find((state) => statuses.some((s) => s.state === state)) ?? "ready";
 }
 
+/** Whether `url`'s host is under MNEMOS_SKIP_DOMAINS; false for no URL or not one. */
+function onSkippedDomain(url: string | null | undefined, config: FetchConfig): boolean {
+  if (!url || config.skipDomains.length === 0) return false;
+  try {
+    return isSkippedDomain(new URL(url).hostname, config);
+  } catch {
+    return false; // not a URL: never fetched
+  }
+}
+
 /**
  * The URLs among `entries` whose pages this process's skip lists keep private:
  * a skipped domain, or any of the URL's bookmarks in a skipped folder (the
@@ -187,15 +198,7 @@ function skippedPages(entries: lib.Entry[], prefix: string, config: FetchConfig)
   for (const { folder, node } of entries) {
     const url = node.url ?? "";
     if (skipped.has(url)) continue;
-    let host: string | undefined;
-    try {
-      host = new URL(url).hostname;
-    } catch {
-      // not a URL: never fetched
-    }
-    if (isSkippedFolder(prefix + folder, config) || (host !== undefined && isSkippedDomain(host, config))) {
-      skipped.add(url);
-    }
+    if (isSkippedFolder(prefix + folder, config) || onSkippedDomain(url, config)) skipped.add(url);
   }
   return skipped;
 }
@@ -287,7 +290,9 @@ export async function semanticSearch(
       const keyword = keywordHit(entry);
       const title = scores?.titles.get(part.guids[i]);
       const url = entry.node.url ?? "";
-      const page = hidden.has(url) ? undefined : scores?.pages.get(url);
+      // A redirect into a skipped domain: this process's fetch would have stopped there.
+      let page = hidden.has(url) ? undefined : scores?.pages.get(url);
+      if (page && onSkippedDomain(page.final_url, config)) page = undefined;
       if (page !== undefined && (title === undefined || page.score > title)) {
         candidates.push({ entry, part: at, keyword, score: page.score, page: page.text });
       } else {

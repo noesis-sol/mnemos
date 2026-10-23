@@ -29,6 +29,7 @@ const SELECTION_VARS = [
 
 const BANK = "https://bank.example/statements";
 const FOOD = "https://food.example/recipes";
+const SHORT = "https://short.link/abc";
 const BANK_TEXT = "Overdraft fees and mortgage interest, month by month. ".repeat(4);
 const FOOD_TEXT = "Sourdough starter, fed daily, and a long rise. ".repeat(4);
 
@@ -79,9 +80,10 @@ function chromiumProfile(browser, ...children) {
 /**
  * An indexer per source of the selection now, its titles embedded, and each
  * page's text stored as one chunk, as a lease holder with no skip list left
- * it. Returns semanticSearch's context and a close().
+ * it, fetched from `finalUrls[url]` in the end when given (a redirect).
+ * Returns semanticSearch's context and a close().
  */
-async function indexed(pages, dir) {
+async function indexed(pages, dir, finalUrls = {}) {
   const embedder = new FakeEmbedder();
   const made = new Map();
   for (const { source } of lib.readBookmarks().read) {
@@ -100,7 +102,7 @@ async function indexed(pages, dir) {
       for (const { url: u } of store.pageStates()) {
         const text = pages[u];
         if (!text) continue;
-        store.upsertPage({ url: u, status: "ok", fetched_at: Date.now(), content_hash: "h", text });
+        store.upsertPage({ url: u, status: "ok", final_url: finalUrls[u] ?? u, fetched_at: Date.now(), content_hash: "h", text });
         store.replaceChunks(u, [text], "h");
         store.setChunkVector(u, 0, text, fakeVector(text));
       }
@@ -150,6 +152,26 @@ test("one browser: a skipped folder or domain keeps a page's text out of the ans
     // A keyword hit on the title is still returned, without the page.
     const bank = await semanticSearch(ctx({ MNEMOS_SKIP_FOLDERS: "Private" }), "bank");
     assert.ok(bank.results.some((r) => r.url === BANK && r.matched_on === "keyword" && r.snippet === undefined));
+  } finally {
+    close();
+  }
+});
+
+test("a bookmark that redirected into a skipped domain: its page's text is kept out too", async () => {
+  chromiumProfile("chrome", url("Short link", SHORT), url("Recipes", FOOD));
+  browsers.setStartupOptions({ browser: ["chrome"] });
+  const { ctx, close } = await indexed({ [SHORT]: BANK_TEXT, [FOOD]: FOOD_TEXT }, tempDir("mnemos-semantic-skip-cache-"), {
+    [SHORT]: BANK,
+  });
+  try {
+    const open = await semanticSearch(ctx({}), "overdraft mortgage");
+    assert.deepEqual(pageHits(open).map(([u]) => u), [SHORT], "no skip list: the page matches");
+
+    const data = await semanticSearch(ctx({ MNEMOS_SKIP_DOMAINS: "bank.example" }), "overdraft mortgage");
+    assert.deepEqual(pageHits(data), []);
+    assert.ok(!JSON.stringify(data).includes("Overdraft"), "none of the page's text");
+    const food = await semanticSearch(ctx({ MNEMOS_SKIP_DOMAINS: "bank.example" }), "sourdough starter");
+    assert.deepEqual(pageHits(food).map(([u]) => u), [FOOD]);
   } finally {
     close();
   }

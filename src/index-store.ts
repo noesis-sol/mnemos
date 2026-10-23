@@ -796,13 +796,19 @@ export class IndexStore {
     return topK(scored(), limit);
   }
 
-  /** Each page's chunk closest to `query` (normalised), by URL. */
-  bestChunks(query: Float32Array): Map<string, { score: number; text: string }> {
-    const best = new Map<string, { score: number; text: string }>();
-    for (const row of this.db.prepare("SELECT url, text, vector FROM chunks WHERE vector IS NOT NULL").iterate()) {
+  /** Each page's chunk closest to `query` (normalised), by URL, with the URL its text was fetched from in the end. */
+  bestChunks(query: Float32Array): Map<string, { score: number; text: string; final_url: string | null }> {
+    const best = new Map<string, { score: number; text: string; final_url: string | null }>();
+    const rows = this.db.prepare(
+      `SELECT c.url, c.text, c.vector, p.final_url FROM chunks c LEFT JOIN pages p ON p.url = c.url
+       WHERE c.vector IS NOT NULL`,
+    );
+    for (const row of rows.iterate()) {
       const url = row.url as string;
       const score = dot(query, blobToVector(row.vector as Uint8Array));
-      if (score > (best.get(url)?.score ?? -Infinity)) best.set(url, { score, text: row.text as string });
+      if (score > (best.get(url)?.score ?? -Infinity)) {
+        best.set(url, { score, text: row.text as string, final_url: (row.final_url as string | null) ?? null });
+      }
     }
     return best;
   }
