@@ -789,7 +789,10 @@ root entry and that matrix in step.
   with about 15% of the one before, at most 40 per page; a page that lost its text (no longer
   `ok`, and not just `failed`) loses its chunks. Chunks without a vector are embedded as
   `passage`, the bookmark's title (150 characters at most) on the line before, 8 at a time with
-  a yield between. `semantic_search` ranks a bookmark by the better of its title and its page's
+  a yield between; a page whose title is no longer the `pages.chunked_title` its vectors were
+  embedded with (schema version 4: its bookmark renamed, or deleted and another bookmark's title
+  now the page's) has its chunks embedded again, uncut, and a vector embedded with a title the
+  page no longer has is not stored. `semantic_search` ranks a bookmark by the better of its title and its page's
   best chunk (`matched_on: "page"` with a snippet that starts near the first query word); the
   progress line's `pages y/N` counts pages whose chunks are all embedded.
 - **Tests**: `test/page-chunks.test.js`: unit: `estimateTokens`; `chunkText` on empty and short
@@ -798,7 +801,11 @@ root entry and that matrix in step.
   near the query words. Store: `pagesToChunk`, `embeddedPageCount`, the version 2 to 3
   migration. In process (`Indexer` with a counting fake embedder): chunks embedded after the
   title, the same text fetched again embeds nothing, new text is cut again, a login wall drops
-  the chunks, leftover chunks are embedded at the next start. e2e (SDK client over stdio, fake
+  the chunks, leftover chunks are embedded at the next start. `test/chunk-titles.test.js`: in
+  process, renaming a bookmark embeds its page's chunks again with the new title and no other
+  page's, and deleting the first bookmark of a URL embeds them with the next one's; store:
+  `retitleChunks`, `setChunkVector` refusing a stale title, the version 3 to 4 migration
+  embedding nothing again. e2e (SDK client over stdio, fake
   embedder with `MNEMOS_FAKE_EMBED_LOG`, a `node:http` fixture site): words only in a page's
   body find it with `matched_on: "page"` and a snippet holding them; after a restart that
   re-fetches both pages, the unchanged one is not embedded again and the changed one is.
@@ -806,7 +813,8 @@ root entry and that matrix in step.
   found only through their body, across languages both ways, with the topic in the snippet.
 - **Untested**: two processes embedding the same chunks at once (harmless: the same vectors are
   written twice; no ticket).
-- **Tickets**: mnemos-tc4.10; mnemos-tc4.4 (re-fetching after 30 days); mnemos-tc4.13
+- **Tickets**: mnemos-tc4.10; mnemos-tc4.4 (re-fetching after 30 days); mnemos-tc4.13;
+  mnemos-6fj (chunks follow a bookmark's rename)
 
 ## Headless browser rendering
 

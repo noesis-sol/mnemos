@@ -11,7 +11,8 @@
  * After the titles, each run cuts the text of fetched pages into chunks
  * (chunk.ts) and embeds them the same way, in smaller batches since a chunk
  * is longer than a title. A page is cut again only when its text
- * (content_hash) changed, so a re-fetch of the same text embeds nothing.
+ * (content_hash) changed, so a re-fetch of the same text embeds nothing, and
+ * its chunks are embedded again, uncut, when its title changed.
  *
  * It re-runs when the Bookmarks file changes, or a Chromium profile's
  * AccountBookmarks file beside it. There is no fs.watch: callers
@@ -498,9 +499,9 @@ export class Indexer {
   }
 
   /**
-   * Cuts the pages whose text changed into chunks, then embeds every chunk
-   * that has no vector, the bookmark's title before each, CHUNK_BATCH at a
-   * time with a yield between.
+   * Cuts the pages whose text changed into chunks, drops the vectors of pages
+   * whose title changed, then embeds every chunk that has no vector, the
+   * bookmark's title before each, CHUNK_BATCH at a time with a yield between.
    */
   private async indexPages(store: IndexStore): Promise<void> {
     for (const page of store.pagesToChunk()) {
@@ -509,6 +510,7 @@ export class Indexer {
       store.replaceChunks(page.url, text ? chunkText(text) : [], page.content_hash);
       await yieldToEventLoop();
     }
+    store.retitleChunks();
     for (;;) {
       if (this.store !== store) return;
       const batch = store.chunksWithoutVector(CHUNK_BATCH);
@@ -521,7 +523,9 @@ export class Indexer {
       );
       if (this.store !== store) return;
       let stored = 0;
-      batch.forEach((c, j) => (stored += Number(store.setChunkVector(c.url, c.ordinal, c.text, vectors[j]))));
+      batch.forEach(
+        (c, j) => (stored += Number(store.setChunkVector(c.url, c.ordinal, c.text, vectors[j], titles.get(c.url)))),
+      );
       // Every chunk of the batch was replaced meanwhile (another process cut the page again): try once more later.
       if (stored === 0) return void this.pagesChanged();
       await yieldToEventLoop();

@@ -24,7 +24,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** Bump when the schema changes, and add a step to MIGRATIONS if the old data is worth keeping. */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 /**
  * Steps from version n to n+1, keyed by n. A file whose version has no path
@@ -35,7 +35,19 @@ const MIGRATIONS: Record<number, (db: DatabaseSync) => void> = {
   1: (db) => db.exec("ALTER TABLE pages ADD COLUMN text TEXT"),
   // 3: the indexer records which text (content_hash) a page's chunks were cut from.
   2: (db) => addColumn(db, "pages", "chunked_hash", "TEXT"),
+  // 4: and with which title their vectors were embedded. Taken to be the
+  // title each page has now, so an upgrade does not embed every chunk again.
+  3: (db) => {
+    addColumn(db, "pages", "chunked_title", "TEXT");
+    db.exec(`UPDATE pages SET chunked_title = ${PAGE_TITLE}`);
+  },
 };
+
+/**
+ * The title a page's chunks are embedded with, in a query on `pages`: that of
+ * the first bookmark (by guid) with its URL, or "" if none has it.
+ */
+const PAGE_TITLE = "COALESCE((SELECT title FROM bookmarks WHERE bookmarks.url = pages.url ORDER BY guid LIMIT 1), '')";
 
 /** Adds the column unless the table has it already (a file rolled back by hand, as tests do). */
 function addColumn(db: DatabaseSync, table: string, column: string, type: string): void {
@@ -219,7 +231,8 @@ CREATE TABLE pages (
   content_hash TEXT,
   reason TEXT,
   text TEXT,
-  chunked_hash TEXT
+  chunked_hash TEXT,
+  chunked_title TEXT
 );
 CREATE TABLE chunks (
   url TEXT NOT NULL,
@@ -680,14 +693,42 @@ export class IndexStore {
 
   /**
    * Replaces the page's chunks; the new ones have no vectors yet. `contentHash`
-   * is the content_hash of the text they were cut from (none for no text).
+   * is the content_hash of the text they were cut from (none for no text). The
+   * page's title is recorded as the one they are embedded with.
    */
   replaceChunks(url: string, texts: string[], contentHash: string | null = null): void {
     this.transaction(() => {
       this.db.prepare("DELETE FROM chunks WHERE url = ?").run(url);
       const insert = this.db.prepare("INSERT INTO chunks (url, ordinal, text, vector) VALUES (?, ?, ?, NULL)");
       texts.forEach((text, ordinal) => insert.run(url, ordinal, text));
-      this.db.prepare("UPDATE pages SET chunked_hash = ? WHERE url = ?").run(contentHash, url);
+      this.db
+        .prepare(`UPDATE pages SET chunked_hash = ?, chunked_title = ${PAGE_TITLE} WHERE url = ?`)
+        .run(contentHash, url);
+    });
+  }
+
+  /**
+   * Drops the chunk vectors of every page whose title is no longer the one
+   * they were embedded with (its bookmark was renamed, or deleted and another
+   * bookmark's title is now the page's), and records the new title, so they
+   * are embedded again with it. Returns how many pages that was.
+   */
+  retitleChunks(): number {
+    return this.transaction(() => {
+      const urls = this.db
+        .prepare(
+          `SELECT url FROM pages
+           WHERE chunked_title IS NOT ${PAGE_TITLE} AND EXISTS (SELECT 1 FROM chunks WHERE chunks.url = pages.url)`,
+        )
+        .all()
+        .map((r) => r.url as string);
+      const clear = this.db.prepare("UPDATE chunks SET vector = NULL WHERE url = ?");
+      const record = this.db.prepare(`UPDATE pages SET chunked_title = ${PAGE_TITLE} WHERE url = ?`);
+      for (const url of urls) {
+        clear.run(url);
+        record.run(url);
+      }
+      return urls.length;
     });
   }
 
@@ -729,11 +770,17 @@ export class IndexStore {
       .map(toChunk);
   }
 
-  /** Stores a chunk's vector, if the chunk still has the text it was computed from. */
-  setChunkVector(url: string, ordinal: number, text: string, vector: Float32Array): boolean {
+  /**
+   * Stores a chunk's vector, if the chunk still has the text it was computed
+   * from and, when `title` is given, its page still has that title (pageTitle).
+   */
+  setChunkVector(url: string, ordinal: number, text: string, vector: Float32Array, title?: string): boolean {
     const result = this.db
-      .prepare("UPDATE chunks SET vector = ? WHERE url = ? AND ordinal = ? AND text = ?")
-      .run(vectorToBlob(vector), url, ordinal, text);
+      .prepare(
+        `UPDATE chunks SET vector = ?1 WHERE url = ?2 AND ordinal = ?3 AND text = ?4
+           AND (?5 IS NULL OR ?5 = COALESCE((SELECT title FROM bookmarks WHERE bookmarks.url = ?2 ORDER BY guid LIMIT 1), ''))`,
+      )
+      .run(vectorToBlob(vector), url, ordinal, text, title ?? null);
     return result.changes === 1;
   }
 

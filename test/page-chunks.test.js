@@ -289,8 +289,7 @@ test("store: a version 2 index gains pages.chunked_hash and keeps its rows", () 
 
   const reopened = IndexStore.open({ bookmarksFile, dir });
   try {
-    assert.equal(SCHEMA_VERSION, 3);
-    assert.equal(reopened.getMeta("schema_version"), "3");
+    assert.equal(reopened.getMeta("schema_version"), String(SCHEMA_VERSION));
     assert.equal(reopened.getPage("https://a.example/").text, "the page");
     assert.deepEqual(reopened.pagesToChunk(), [{ url: "https://a.example/", content_hash: "h" }]);
   } finally {
