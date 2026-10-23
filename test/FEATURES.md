@@ -400,9 +400,14 @@ root entry and that matrix in step.
   first bytes whatever their names, an unknown format named as such, a cut-off or empty file
   still mid-write; the cache returning the same parse for an unchanged file, re-reading after a
   change of size or of mtime alone, never keeping an error, and Firefox re-read when its WAL
-  changes; over MCP, `--browser all` with two Chrome profiles.
-- **Untested**: real multi-profile installs (by hand only); a Firefox database locked by a
-  running Firefox.
+  changes; over MCP, `--browser all` with two Chrome profiles. `test/firefox-locked.test.js`
+  (unit, a fake home): a places.sqlite in WAL mode held by another connection under
+  `locking_mode=EXCLUSIVE` with a write transaction open, as a running Firefox holds it, is read
+  (from its copy) with `--browser firefox`, its committed bookmarks only and no warning; with
+  `--browser all` it is read beside Chrome, no warning; once the lock's transaction commits and
+  the connection closes, the next call reads the bookmark written under it.
+- **Untested**: real multi-profile installs (by hand only); a lock held by a real Firefox (by
+  hand only).
 - **Tickets**: mnemos-5ij.6; mnemos-gts.7 (a locked Firefox database)
 
 ## Page fetch policy and safe fetch
