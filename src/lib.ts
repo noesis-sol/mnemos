@@ -13,6 +13,9 @@
  * browsers selected, each bookmark's folder path starts with its browser's
  * name ("Firefox › Bookmarks Toolbar › …"), then its profile's when that
  * browser has several (--browser all: "Chrome › Work › Bookmarks Bar").
+ * A Chromium profile's bookmarks saved to the Google account (its
+ * AccountBookmarks file) are read with the rest, under root folders of their
+ * own ("Account Bookmarks Bar"), so a folder in each file keeps its own path.
  * Parsed bookmarks files are kept until they change (sourceRoots()).
  */
 
@@ -37,7 +40,14 @@ import {
   type StartupOptions,
 } from "./browsers.js";
 import { isBinaryPlist } from "./plist.js";
-import { SEP, selectSources, sourceName, type SelectOptions, type Source } from "./sources.js";
+import {
+  SEP,
+  accountBookmarksFile,
+  selectSources,
+  sourceName,
+  type SelectOptions,
+  type Source,
+} from "./sources.js";
 
 export interface BookmarkNode {
   type?: string;
@@ -99,13 +109,13 @@ function readHead(file: string): Buffer {
 }
 
 /**
- * The error for a bookmarks file that cannot be read, naming where to look
- * instead; `others`, also the other browsers that have bookmarks. A file
- * named by path (no browser) reads as Chrome's, as it always has.
+ * The error for a source's bookmarks file (`file`, its Bookmarks file or its
+ * AccountBookmarks file) that cannot be read, naming where to look instead;
+ * `others`, also the other browsers that have bookmarks. A file named by
+ * path (no browser) reads as Chrome's, as it always has.
  */
-function unreadable(source: Source, error: unknown, others = true): Error {
+function unreadable(source: Source, file: string, error: unknown, others = true): Error {
   const browser: Browser = source.browser ?? "chrome";
-  const file = source.bookmarks;
   const code = (error as NodeJS.ErrnoException).code;
   let message: string;
   if (browser === "safari" && (code === "EPERM" || code === "EACCES")) {
@@ -181,19 +191,30 @@ function stamp(file: string): string {
 }
 
 /**
- * The root folders of a source's bookmarks file, keyed by root name. The
- * file's format is read from its first bytes, so MNEMOS_BOOKMARKS_PATH can
+ * The files a source's bookmarks are read from, whose changes the index
+ * follows: its bookmarks file and, for a Chromium profile, its
+ * AccountBookmarks file, whether or not that exists yet.
+ */
+export function sourceFiles(source: Source): string[] {
+  const account = accountBookmarksFile(source);
+  return account === undefined ? [source.bookmarks] : [source.bookmarks, account];
+}
+
+/**
+ * The root folders of a source's bookmarks file, keyed by root name, and of
+ * a Chromium profile's AccountBookmarks file when it has one (see
+ * accountRoots()). The file's format is read from its first bytes, so MNEMOS_BOOKMARKS_PATH can
  * point at any supported browser's file: Chromium JSON ('{'), Firefox's
  * places.sqlite ('SQLite format 3\0') or Safari's binary Bookmarks.plist
  * ('bplist00'). `others`: a missing file's error also names the other browsers
  * with bookmarks. The roots are kept, and returned again (the same object, not
- * to be changed), until the file's modification time or size changes; a file
+ * to be changed), until a file's modification time or size changes; a file
  * that cannot be read is read again on every call.
  */
 export function sourceRoots(source: Source, others = true): Record<string, BookmarkNode> {
   const file = source.bookmarks;
   // Stamped before reading: a write in between is read now and noticed next time.
-  const now = `${stamp(file)}\0${stamp(`${file}-wal`)}`;
+  const now = [...sourceFiles(source), `${file}-wal`].map(stamp).join("\0");
   const kept = parsed.get(file);
   if (kept?.stamp === now) return kept.roots;
   const roots = parseRoots(source, others);
@@ -202,20 +223,52 @@ export function sourceRoots(source: Source, others = true): Record<string, Bookm
 }
 
 function parseRoots(source: Source, others: boolean): Record<string, BookmarkNode> {
+  const account = accountBookmarksFile(source);
+  if (account === undefined || !fs.existsSync(account)) return parseFile(source, source.bookmarks, others);
+  // A profile that keeps only account bookmarks has no Bookmarks file.
+  const local = fs.existsSync(source.bookmarks) ? parseFile(source, source.bookmarks, others) : {};
+  return accountRoots(local, parseFile(source, account, others));
+}
+
+/** The label an AccountBookmarks root folder goes by: "Account Bookmarks Bar". */
+export const ACCOUNT_ROOT = "Account";
+
+/**
+ * A Chromium profile's roots: its Bookmarks file's, then its AccountBookmarks
+ * file's, each of those keyed by its label after ACCOUNT_ROOT. Chrome shows
+ * both files' Bookmarks Bar as one, but they are separate trees: a folder
+ * named alike in each stays two folders, as Chrome's bookmark manager shows
+ * them ("In your Google Account" and "Only on this device").
+ */
+function accountRoots(
+  local: Record<string, BookmarkNode>,
+  account: Record<string, BookmarkNode>,
+): Record<string, BookmarkNode> {
+  const roots = { ...local };
+  for (const [key, root] of Object.entries(account)) {
+    const label = `${ACCOUNT_ROOT} ${ROOT_LABELS[key] ?? key}`;
+    let at = label;
+    for (let n = 2; at in roots; n++) at = `${label} (${n})`;
+    roots[at] = root;
+  }
+  return roots;
+}
+
+/** The roots of one bookmarks file of a source: its Bookmarks file, or its AccountBookmarks file. */
+function parseFile(source: Source, file: string, others: boolean): Record<string, BookmarkNode> {
   const browser: Browser = source.browser ?? "chrome";
-  const file = source.bookmarks;
   let head: Buffer;
   try {
     head = readHead(file);
   } catch (e) {
-    throw unreadable(source, e, others);
+    throw unreadable(source, file, e, others);
   }
   if (isSqlite(head)) return readFirefoxRoots(file);
   let data: Buffer;
   try {
     data = fs.readFileSync(file);
   } catch (e) {
-    throw unreadable(source, e, others);
+    throw unreadable(source, file, e, others);
   }
   if (isBinaryPlist(head)) return readSafariRoots(file, data);
   if (data.toString("latin1", 0, 5) === "<?xml") {

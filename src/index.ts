@@ -99,7 +99,7 @@ const pageRenderer = new SharedRenderer(new HeadlessBrowser());
 const indexes = new SourceIndexes((source) => {
   const bookmarksFile = () => source.bookmarks;
   const entries = () => lib.sourceBookmarks(source);
-  const indexer = new Indexer({ embedder, bookmarksFile, entries });
+  const indexer = new Indexer({ embedder, bookmarksFile, files: () => lib.sourceFiles(source), entries });
   const fetcher = new Fetcher({
     bookmarksFile,
     entries,

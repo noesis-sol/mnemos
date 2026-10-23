@@ -9,8 +9,10 @@
  *   all       every profile with bookmarks of every browser here, each
  *             browser's default profile first
  *
- * MNEMOS_BOOKMARKS_PATH (or CHROME_BOOKMARKS_PATH) names the one file to read
- * instead. Every tool result reports the sources it read; with several, a
+ * A Chromium profile's source is its Bookmarks file and, beside it, its
+ * AccountBookmarks file (the bookmarks saved to the Google account), read
+ * together; see accountBookmarksFile(). MNEMOS_BOOKMARKS_PATH (or
+ * CHROME_BOOKMARKS_PATH) names the one file to read instead. Every tool result reports the sources it read; with several, a
  * source that cannot be found or read is a warning, not an error, and each
  * source's folder paths start with its browser's name, then its profile's
  * when that browser has several sources ("Chrome › Work › Bookmarks Bar").
@@ -19,6 +21,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  ACCOUNT_BOOKMARKS,
   BROWSER_NAMES,
   bookmarksPathOverride,
   browsersWithBookmarks,
@@ -47,8 +50,24 @@ export interface Source {
   browser: Browser | null;
   /** "Display Name (directory)", or the directory; null for Safari, which has no profiles, and for a file named by path. */
   profile: string | null;
-  /** The bookmarks file. */
+  /**
+   * The bookmarks file. A Chromium profile's Bookmarks file, which keys the
+   * profile's index, is named even when the profile keeps only account bookmarks.
+   */
   bookmarks: string;
+  /** A Chromium profile's AccountBookmarks file, when it has one: see accountBookmarksFile(). */
+  account_bookmarks?: string;
+}
+
+/**
+ * Where a Chromium profile's source keeps the bookmarks saved to the
+ * signed-in account, whether or not the file exists yet: AccountBookmarks
+ * beside its Bookmarks file. Undefined for other browsers and for a file
+ * named by MNEMOS_BOOKMARKS_PATH (no profile), which is the one file read.
+ */
+export function accountBookmarksFile(source: Source): string | undefined {
+  if (!source.browser || !isChromium(source.browser) || source.profile === null) return undefined;
+  return path.join(path.dirname(source.bookmarks), ACCOUNT_BOOKMARKS);
 }
 
 /** A selected browser whose bookmarks file could not be found. */
@@ -220,7 +239,10 @@ export function browserSource(
   const base = chromiumBase(browser, platform, env);
   // Opera's older root-level Bookmarks file is its Default profile.
   const dir = path.dirname(bookmarks) === base ? "Default" : path.basename(path.dirname(bookmarks));
-  return { browser, profile: profileLabel(chromiumLocalState(base).names[dir], dir), bookmarks };
+  const source: Source = { browser, profile: profileLabel(chromiumLocalState(base).names[dir], dir), bookmarks };
+  const account = accountBookmarksFile(source);
+  if (account && fs.existsSync(account)) source.account_bookmarks = account;
+  return source;
 }
 
 /** Path segments are joined with this — "/" can appear in folder names. */

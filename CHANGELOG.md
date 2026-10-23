@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Chrome's bookmarks saved to your Google account ("Save in account", kept since Chrome 146 in the profile's `AccountBookmarks` file) are read along with the rest, by every tool and by `semantic_search`, under root folders of their own (`Account Bookmarks Bar › …`, `Account Other Bookmarks › …`). Before, mnemos read only the `Bookmarks` file, so those bookmarks were missing without a warning, and a profile holding only account bookmarks was not found. A result's `sources` names the profile's `account_bookmarks` file when it has one.
 - The semantic index follows bookmarks you add, rename, move or delete within about a minute, without waiting for a `semantic_search` call. Before, it was re-synced only at startup and by `semantic_search`, so a new bookmark's page was not fetched until one of them came.
 
 ## 0.5.0 (2026-10-14)

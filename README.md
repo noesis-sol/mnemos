@@ -97,6 +97,13 @@ for a browser read in several profiles (`--browser all`), the profile's
 saved in several browsers or profiles counts once in `top_domains` and is one
 result in `semantic_search`.
 
+Chrome keeps the bookmarks you save to your Google account apart from those
+only on this device, in a profile's `AccountBookmarks` file beside its
+`Bookmarks` file. mnemos reads both: the account's root folders are named
+`Account Bookmarks Bar`, `Account Other Bookmarks` and `Account Mobile
+Bookmarks`, so a folder in each keeps its own path, and `sources` names the
+file as `account_bookmarks`.
+
 Every tool that can truncate reports a `total_matches` count (`semantic_search`:
 `count_above_threshold`), so the assistant always knows when it is looking at a
 partial list. Defaults return up to 100 items (hard cap 200; `top_domains`

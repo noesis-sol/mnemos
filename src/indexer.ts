@@ -13,8 +13,9 @@
  * is longer than a title. A page is cut again only when its text
  * (content_hash) changed, so a re-fetch of the same text embeds nothing.
  *
- * It re-runs when the Bookmarks file changes. There is no fs.watch: callers
- * (semantic_search) call checkForChanges(), which compares the file's mtime
+ * It re-runs when the Bookmarks file changes, or a Chromium profile's
+ * AccountBookmarks file beside it. There is no fs.watch: callers
+ * (semantic_search) call checkForChanges(), which compares the files' mtime
  * and size with those of the last run and schedules a debounced re-index, and
  * the indexer makes the same comparison itself every CHANGE_POLL_MS, so the
  * store's bookmarks, and with them the pages the fetcher fetches, follow the
@@ -151,15 +152,19 @@ export function textHash(text: string): string {
  * The store's rows for the bookmarks as they are now. A Chromium bookmark is
  * keyed by its guid; the Firefox and Safari readers give none, so those are
  * keyed by folder, URL and which copy of that URL in that folder it is, which
- * survives a retitle, an insertion elsewhere and a restart.
+ * survives a retitle, an insertion elsewhere and a restart. A guid met again
+ * (a Chromium profile's Bookmarks and AccountBookmarks files are separate
+ * trees, which need not keep their guids apart) is keyed the same way.
  */
 export function bookmarkRows(entries: Iterable<lib.Entry>): BookmarkRow[] {
   const rows: BookmarkRow[] = [];
   const copies = new Map<string, number>();
+  const guids = new Set<string>();
   for (const { folder, node } of entries) {
     const url = node.url ?? "";
-    let guid = typeof node.guid === "string" && node.guid ? node.guid : "";
-    if (!guid) {
+    let guid = typeof node.guid === "string" && node.guid && !guids.has(node.guid) ? node.guid : "";
+    if (guid) guids.add(guid);
+    else {
       const place = `${folder}\0${url}`;
       const copy = copies.get(place) ?? 0;
       copies.set(place, copy + 1);
@@ -191,6 +196,12 @@ export interface IndexerOptions {
   embedder: Embedder;
   /** The Bookmarks file; defaults to lib.bookmarksPath(), read at each run. */
   bookmarksFile?: () => string;
+  /**
+   * The files the bookmarks are read from, whose changes start a re-index
+   * (lib.sourceFiles: a Chromium profile's AccountBookmarks file too);
+   * defaults to the Bookmarks file alone.
+   */
+  files?: () => string[];
   /** The bookmarks; defaults to lib.allBookmarks(). */
   entries?: () => Iterable<lib.Entry>;
   /** Where the index lives; defaults to the store's cacheDir(). */
@@ -210,12 +221,15 @@ function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-/** mtime and size of the file and of its write-ahead log (Firefox's places.sqlite-wal), if any. */
-function fileSignature(file: string): string {
-  return ["", "-wal"]
-    .map((suffix) => {
+/**
+ * mtime and size of each file and of the first's write-ahead log (Firefox's
+ * places.sqlite-wal), if any; "-" for a file that is not there.
+ */
+function fileSignature(files: string[]): string {
+  return [...files, `${files[0]}-wal`]
+    .map((file) => {
       try {
-        const stat = fs.statSync(file + suffix);
+        const stat = fs.statSync(file);
         return `${stat.mtimeMs}:${stat.size}`;
       } catch {
         return "-";
@@ -227,6 +241,7 @@ function fileSignature(file: string): string {
 export class Indexer {
   private readonly embedder: Embedder;
   private readonly bookmarksFile: () => string;
+  private readonly files: () => string[];
   private readonly entries: () => Iterable<lib.Entry>;
   private readonly dir: string | undefined;
   private readonly debounceMs: number;
@@ -251,6 +266,7 @@ export class Indexer {
   constructor(options: IndexerOptions) {
     this.embedder = options.embedder;
     this.bookmarksFile = options.bookmarksFile ?? (() => lib.bookmarksPath());
+    this.files = options.files ?? (() => [this.bookmarksFile()]);
     this.entries = options.entries ?? (() => lib.allBookmarks());
     this.dir = options.dir;
     this.debounceMs = options.debounceMs ?? REINDEX_DEBOUNCE_MS;
@@ -323,7 +339,7 @@ export class Indexer {
       const unchanged =
         this.current.state !== "failed" &&
         this.indexedSignature !== undefined &&
-        fileSignature(this.bookmarksFile()) === this.indexedSignature;
+        fileSignature(this.files()) === this.indexedSignature;
       if (!unchanged) this.schedule(this.debounceMs, true);
     } catch (err) {
       this.fail(err);
@@ -353,7 +369,7 @@ export class Indexer {
    */
   private pollForChanges(): void {
     try {
-      if (fileSignature(this.bookmarksFile()) !== this.readSignature) this.schedule(this.debounceMs, true);
+      if (fileSignature(this.files()) !== this.readSignature) this.schedule(this.debounceMs, true);
     } catch (err) {
       this.fail(err);
     }
@@ -425,7 +441,7 @@ export class Indexer {
     const file = this.bookmarksFile();
     // Taken before the read, so a change made while this run reads or embeds
     // is seen by the next checkForChanges().
-    const signature = fileSignature(file);
+    const signature = fileSignature(this.files());
     this.readSignature = signature;
     this.current = { ...this.current, state: "indexing" };
     let store: IndexStore;

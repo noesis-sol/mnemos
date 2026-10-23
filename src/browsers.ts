@@ -2,8 +2,9 @@
  * Where each supported browser keeps its bookmarks, and readers for the
  * formats that are not Chrome's JSON. Chromium-based browsers (Chrome and its
  * Beta, Dev and Canary channels, Chromium, Edge, Brave, Vivaldi, Opera) all
- * write the same `Bookmarks` JSON file,
- * which lib.ts parses; Firefox and its forks (LibreWolf, Waterfox, Zen, Floorp,
+ * write the same `Bookmarks` JSON file, and Chrome (since 146) keeps the
+ * bookmarks saved to the Google account beside it in `AccountBookmarks`, in
+ * the same format; lib.ts parses both; Firefox and its forks (LibreWolf, Waterfox, Zen, Floorp,
  * Tor Browser) keep bookmarks in the `places.sqlite` database and Safari in a
  * binary `Bookmarks.plist`. Both readers convert to the
  * Chrome-shaped BookmarkNode tree, so every tool works on every browser.
@@ -359,12 +360,24 @@ export function chromiumLocalState(base: string): ChromiumLocalState {
 export function chromiumProfileDir(base: string, wanted: string | undefined): string {
   const state = chromiumLocalState(base);
   if (!wanted) return state.lastUsed ?? "Default";
-  if (wanted in state.names || fs.existsSync(path.join(base, wanted, "Bookmarks"))) return wanted;
+  if (wanted in state.names || hasChromiumBookmarks(path.join(base, wanted))) return wanted;
   const named = Object.entries(state.names);
   const lower = wanted.toLowerCase();
   const match =
     named.find(([, name]) => name === wanted) ?? named.find(([, name]) => name.toLowerCase() === lower);
   return match ? match[0] : wanted;
+}
+
+/**
+ * The file in a Chromium profile directory that holds the bookmarks saved to
+ * the signed-in account ("Save in account", Chrome 146 and later), in the
+ * Bookmarks file's format. Chrome shows both files' bookmarks together.
+ */
+export const ACCOUNT_BOOKMARKS = "AccountBookmarks";
+
+/** Whether a Chromium profile directory holds bookmarks: a Bookmarks or an AccountBookmarks file. */
+export function hasChromiumBookmarks(dir: string): boolean {
+  return fs.existsSync(path.join(dir, "Bookmarks")) || fs.existsSync(path.join(dir, ACCOUNT_BOOKMARKS));
 }
 
 /** A profile as the errors list it: "Display Name (directory)", or the directory alone. */
@@ -374,8 +387,10 @@ export function profileLabel(name: string | undefined, dir: string): string {
 
 /**
  * The Bookmarks file of `profile` (a profile directory's or display name; the
- * last-used profile, else Default, when unset). Opera's Default profile is
- * the root-level Bookmarks file when there is one and no Default/Bookmarks.
+ * last-used profile, else Default, when unset), whether or not it exists: a
+ * profile may keep only account bookmarks (ACCOUNT_BOOKMARKS). Opera's
+ * Default profile is the root-level Bookmarks file when there is one and
+ * Default/ has no bookmarks.
  */
 export function chromiumBookmarksPath(
   browser: ChromiumBrowser,
@@ -386,14 +401,14 @@ export function chromiumBookmarksPath(
   const base = chromiumBase(browser, platform, env);
   const name = chromiumProfileDir(base, profile);
   const file = path.join(base, name, "Bookmarks");
-  if (CHROMIUM_DIRS[browser].rootProfile && name === "Default" && !fs.existsSync(file)) {
+  if (CHROMIUM_DIRS[browser].rootProfile && name === "Default" && !hasChromiumBookmarks(path.dirname(file))) {
     const root = path.join(base, "Bookmarks");
     if (fs.existsSync(root)) return root;
   }
   return file;
 }
 
-/** The profiles of a Chromium-based browser that hold a Bookmarks file, sorted. */
+/** The profiles of a Chromium-based browser that hold bookmarks (hasChromiumBookmarks), sorted. */
 export function chromiumProfiles(
   browser: ChromiumBrowser,
   platform: NodeJS.Platform = process.platform,
@@ -413,7 +428,7 @@ export function chromiumProfiles(
 }
 
 /**
- * The profiles of a Chromium-based browser that hold a Bookmarks file, as
+ * The profiles of a Chromium-based browser that hold bookmarks, as
  * "Display Name (directory)", sorted by directory.
  */
 export function chromiumProfileLabels(
@@ -425,12 +440,12 @@ export function chromiumProfileLabels(
   return chromiumProfiles(browser, platform, env).map((dir) => profileLabel(names[dir], dir));
 }
 
-/** Chromium profile directories under `base` that hold a Bookmarks file, sorted. */
+/** Chromium profile directories under `base` that hold a Bookmarks or an AccountBookmarks file, sorted. */
 export function chromiumProfilesWithBookmarks(base: string): string[] {
   try {
     return fs
       .readdirSync(base)
-      .filter((d) => fs.existsSync(path.join(base, d, "Bookmarks")))
+      .filter((d) => hasChromiumBookmarks(path.join(base, d)))
       .sort();
   } catch {
     return []; // base dir itself missing

@@ -193,6 +193,25 @@ root entry and that matrix in step.
 - **Untested**: `Local State` and `installs.ini` from real installs with several profiles.
 - **Tickets**: mnemos-5ij.4
 
+## Chrome account bookmarks (AccountBookmarks)
+
+- **Reached by**: a Chromium profile's `AccountBookmarks` file beside its `Bookmarks` file
+  (bookmarks saved to the Google account, Chrome 146 and later); `browsers.hasChromiumBookmarks`,
+  `sources.accountBookmarksFile`, `Source.account_bookmarks`, `lib.sourceFiles`,
+  `lib.sourceRoots`, the `Indexer`'s `files` option.
+- **Tests**: `test/account-bookmarks.test.js` (unit, and e2e over MCP): a profile with both
+  files gives every tool both files' bookmarks, the account's under `Account Bookmarks Bar` and
+  its siblings so folders named alike do not merge, with `account_bookmarks` in `sources`; with
+  several browsers they follow the browser's name; `MNEMOS_BOOKMARKS_PATH` reads its one file;
+  a malformed `AccountBookmarks` is an error naming it; a profile with only `AccountBookmarks`
+  is found as the default (by `last_used` and as `Default`), by `--profile` (directory or display
+  name), by `--browser all` and in the missing-profile error, and Opera's root-level file does
+  not shadow it; the parsed roots follow the account file appearing, changing and going; the
+  index re-syncs when either file changes; a guid in both files keeps two rows; the server's
+  `search_bookmarks` and `semantic_search` return both files' bookmarks.
+- **Untested**: a real Chrome 146 profile's files; Chromium browsers other than Chrome and Opera.
+- **Tickets**: mnemos-a1d
+
 ## Local index store
 
 - **Reached by**: the background title indexer (see Background title indexing), the page
