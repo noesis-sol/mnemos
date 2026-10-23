@@ -337,7 +337,7 @@ test("HTML: application/xhtml+xml is accepted; charset and gzip are decoded", as
   assert.equal(xhtml.contentType, "application/xhtml+xml");
   const latin1 = await f.safeFetch(viaPlain("/latin1"), { resolve });
   assert.equal(latin1.html, "café");
-  assert.equal(latin1.charset, "iso-8859-1");
+  assert.equal(latin1.charset, "windows-1252", "the encoding ISO-8859-1 names, as in a browser");
   const gz = await f.safeFetch(viaPlain("/gzip"), { resolve });
   assert.equal(gz.html, "<p>unzipped</p>");
 });

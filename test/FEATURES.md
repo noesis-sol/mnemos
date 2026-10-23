@@ -411,6 +411,10 @@ root entry and that matrix in step.
   `Content-Length`, chunked and decompressed, with exactly 5 MB still fetched; timeouts on
   headers and body; non-HTML skipped (and PDFs with `acceptPdf: false`); XHTML, charset and gzip
   decoding; 403/429 refused once with `Retry-After`; the request headers.
+  `test/fetch-charset.test.js` (unit, a local `node:http` server and `dist/charset.js`): the
+  encoding from a byte order mark, else the header's charset, else a `<meta charset>` or
+  `<meta http-equiv="Content-Type">` in the first 1024 bytes, else UTF-8; UTF-16 with a BOM;
+  the prescan skipping comments, other tags' attributes and unknown labels.
 - **Untested**: Brotli and deflate bodies; IPv6 connections (the servers listen on IPv4 only).
 - **Tickets**: mnemos-tc4.8; mnemos-gts.3 (Brotli, deflate, IPv6)
 

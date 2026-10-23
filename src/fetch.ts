@@ -25,6 +25,7 @@ import tls from "node:tls";
 import zlib from "node:zlib";
 import { domainToASCII } from "node:url";
 import type { Readable } from "node:stream";
+import { decodeHtml } from "./charset.js";
 import { folderMatches } from "./lib.js";
 import { looksLikePdf } from "./pdf.js";
 
@@ -59,6 +60,7 @@ export type FetchOutcome =
       url: string;
       httpStatus: number;
       contentType: string;
+      /** The encoding the page was decoded with (canonical name): see charset.ts. */
       charset: string;
       html: string;
     }
@@ -528,22 +530,15 @@ async function request(
   });
 }
 
-function parseContentType(header: string | undefined): { type: string; charset: string } {
+/** The media type, lowercased, and the charset parameter as given, if there is one. */
+function parseContentType(header: string | undefined): { type: string; charset?: string } {
   const [type, ...params] = (header ?? "").split(";");
-  let charset = "utf-8";
+  let charset: string | undefined;
   for (const p of params) {
     const m = p.trim().match(/^charset=["']?([^"']+)["']?$/i);
-    if (m) charset = m[1].trim().toLowerCase();
+    if (m) charset = m[1].trim();
   }
   return { type: type.trim().toLowerCase(), charset };
-}
-
-function decode(body: Buffer, charset: string): { html: string; charset: string } {
-  try {
-    return { html: new TextDecoder(charset).decode(body), charset };
-  } catch {
-    return { html: new TextDecoder("utf-8").decode(body), charset: "utf-8" };
-  }
 }
 
 function retryAfterMs(header: string | undefined, now = Date.now()): number | undefined {
@@ -699,7 +694,7 @@ export async function safeFetch(input: string, options: FetchOptions = {}): Prom
         if (!looksLikePdf(body)) return { status: "skipped", reason: "not-html", url: current };
         return { status: "ok", kind: "pdf", url: current, httpStatus: code, contentType: "application/pdf", pdf: body };
       }
-      const decoded = decode(body, charset);
+      const decoded = decodeHtml(body, charset);
       return { status: "ok", kind: "html", url: current, httpStatus: code, contentType: type, ...decoded };
     }
   } catch (e) {
