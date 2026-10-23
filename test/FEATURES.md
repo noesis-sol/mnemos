@@ -447,7 +447,7 @@ root entry and that matrix in step.
   installed; a missing feature rather than a missing test); a PDF over 200 pages in full (the
   page cap itself is tested); the server with `unpdf` uninstalled.
 - **Tickets**: mnemos-9xs; mnemos-wmk (the fetcher reads PDFs); mnemos-gts.8 (`unpdf`
-  unresolvable)
+  unresolvable); mnemos-gts.16 (the default 200-page cap)
 
 ## Embedder
 
@@ -506,7 +506,8 @@ root entry and that matrix in step.
   reloading its runtime, whose folder another version's mnemos may then remove under it; npm on the PATH as the last resort (only the
   choice of it is unit-tested); the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).
-- **Tickets**: mnemos-gts.9 (the install's timeout, npm on the PATH)
+- **Tickets**: mnemos-gts.9 (the install's timeout, npm on the PATH); mnemos-gts.15 (a runtime
+  folder pruned while in use)
 
 ## Background title indexing
 
@@ -551,7 +552,7 @@ root entry and that matrix in step.
   deleted and renamed while the server runs are found through `semantic_search`, which calls
   `checkForChanges()`); that path over MCP in `npm test`.
 - **Tickets**: mnemos-tc4.7; mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`);
-  mnemos-tc4.13 (acceptance on GitHub)
+  mnemos-tc4.13 (acceptance on GitHub); mnemos-gts.14 (edits while the server runs, over MCP)
 
 ## semantic_search
 
