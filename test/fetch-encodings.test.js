@@ -1,5 +1,5 @@
 // safeFetch on the encodings and the address family test/fetch-wrapper.test.js
-// leaves out: Brotli and deflate bodies, decoded and held to the 5 MB cap, and
+// leaves out: Brotli and deflate bodies (zlib-wrapped and raw), decoded and held to the 5 MB cap, and
 // a page served from a server listening on the IPv6 loopback [::1], let through
 // the private-address block by MNEMOS_FETCH_ALLOW_HOSTS. Names other than IP
 // literals go through an injected resolver that knows only test names, so
@@ -31,10 +31,25 @@ function routes(seen) {
         return encoded("br", zlib.brotliCompressSync("<p>Brotli décodé</p>"));
       case "/deflate":
         return encoded("deflate", zlib.deflateSync("<p>deflate décodé</p>"));
+      case "/deflate-raw":
+        return encoded("deflate", zlib.deflateRawSync("<p>raw deflate décodé</p>"));
+      case "/deflate-raw-split": {
+        // The first byte alone, then the rest: the decoder must wait for two
+        // bytes before it can tell raw deflate from a zlib header.
+        const body = zlib.deflateRawSync("<p>raw deflate in pieces</p>");
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Encoding": "deflate" });
+        res.flushHeaders();
+        res.write(body.subarray(0, 1));
+        return setTimeout(() => res.end(body.subarray(1)), 20);
+      }
+      case "/deflate-empty":
+        return encoded("deflate", Buffer.alloc(0));
       case "/br-bomb":
         return encoded("br", zlib.brotliCompressSync(Buffer.alloc(6 * MB, 0x61)));
       case "/deflate-bomb":
         return encoded("deflate", zlib.deflateSync(Buffer.alloc(6 * MB, 0x61)));
+      case "/deflate-raw-bomb":
+        return encoded("deflate", zlib.deflateRawSync(Buffer.alloc(6 * MB, 0x61)));
       case "/br-exactly-5mb":
         return encoded("br", zlib.brotliCompressSync(Buffer.alloc(5 * MB, 0x61)));
       default:
@@ -101,6 +116,24 @@ test("deflate: a page served Content-Encoding: deflate decodes to its text", asy
   assert.match(seen.at(-1).headers["accept-encoding"], /\bdeflate\b/, "the request offers deflate");
 });
 
+test("deflate: a raw (RFC 1951) body without the zlib header decodes, as browsers do", async () => {
+  const r = await f.safeFetch(viaV4("/deflate-raw"), { resolve });
+  assert.equal(r.status, "ok");
+  assert.equal(r.html, "<p>raw deflate décodé</p>");
+});
+
+test("deflate: a raw body whose first chunk is a single byte still decodes", async () => {
+  const r = await f.safeFetch(viaV4("/deflate-raw-split"), { resolve });
+  assert.equal(r.status, "ok");
+  assert.equal(r.html, "<p>raw deflate in pieces</p>");
+});
+
+test("deflate: an empty body served Content-Encoding: deflate is an empty page", async () => {
+  const r = await f.safeFetch(viaV4("/deflate-empty"), { resolve });
+  assert.equal(r.status, "ok");
+  assert.equal(r.html, "");
+});
+
 test("size cap: a Brotli body that decompresses past 5 MB is refused like gzip's", async () => {
   const r = await f.safeFetch(viaV4("/br-bomb"), { resolve });
   assert.deepEqual(r, { status: "failed", reason: "too-large", url: viaV4("/br-bomb") });
@@ -109,6 +142,11 @@ test("size cap: a Brotli body that decompresses past 5 MB is refused like gzip's
 test("size cap: a deflate body that decompresses past 5 MB is refused", async () => {
   const r = await f.safeFetch(viaV4("/deflate-bomb"), { resolve });
   assert.deepEqual(r, { status: "failed", reason: "too-large", url: viaV4("/deflate-bomb") });
+});
+
+test("size cap: a raw deflate body that decompresses past 5 MB is refused", async () => {
+  const r = await f.safeFetch(viaV4("/deflate-raw-bomb"), { resolve });
+  assert.deepEqual(r, { status: "failed", reason: "too-large", url: viaV4("/deflate-raw-bomb") });
 });
 
 test("size cap: a Brotli body of exactly 5 MB decompressed is still fetched", async () => {

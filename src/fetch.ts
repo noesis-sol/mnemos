@@ -24,7 +24,7 @@ import net from "node:net";
 import tls from "node:tls";
 import zlib from "node:zlib";
 import { domainToASCII } from "node:url";
-import type { Readable } from "node:stream";
+import { Transform, type Readable, type TransformCallback } from "node:stream";
 import { decodeHtml } from "./charset.js";
 import { folderMatches } from "./lib.js";
 import { looksLikePdf } from "./pdf.js";
@@ -548,6 +548,55 @@ function retryAfterMs(header: string | undefined, now = Date.now()): number | un
   return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
+/**
+ * Decodes a Content-Encoding: deflate body, which servers send either
+ * zlib-wrapped (RFC 1950, as HTTP says) or as raw deflate (RFC 1951); browsers
+ * take both. The first two bytes tell them apart: a zlib header has CM = 8 in
+ * the low nibble of the first, and the two read as a big-endian number are a
+ * multiple of 31.
+ */
+class DeflateDecoder extends Transform {
+  private head = Buffer.alloc(0);
+  private inflate?: zlib.Inflate | zlib.InflateRaw;
+
+  override _transform(chunk: Buffer, _encoding: BufferEncoding, done: TransformCallback): void {
+    if (!this.inflate) {
+      this.head = Buffer.concat([this.head, chunk]);
+      if (this.head.length < 2) return done();
+      chunk = this.head;
+      this.start();
+    }
+    this.inflate!.write(chunk);
+    done();
+  }
+
+  override _flush(done: TransformCallback): void {
+    // An empty body decodes to an empty body.
+    if (!this.inflate && this.head.length === 0) return done();
+    if (!this.inflate) {
+      this.start();
+      this.inflate!.write(this.head);
+    }
+    this.inflate!.once("end", () => done());
+    this.inflate!.end();
+  }
+
+  override _destroy(error: Error | null, done: (error: Error | null) => void): void {
+    this.inflate?.destroy();
+    done(error);
+  }
+
+  private start(): void {
+    const [b0, b1] = this.head;
+    const zlibWrapped =
+      this.head.length >= 2 && (b0 & 0x0f) === 8 && (b0 * 256 + b1) % 31 === 0;
+    const inflate = zlibWrapped ? zlib.createInflate() : zlib.createInflateRaw();
+    inflate.on("data", (data: Buffer) => this.push(data));
+    inflate.on("error", (e) => this.destroy(e));
+    this.inflate = inflate;
+  }
+}
+
 /** Reads the (decompressed) body, aborting once it passes `maxBytes`. */
 function readBody(
   res: http.IncomingMessage,
@@ -558,7 +607,7 @@ function readBody(
   const encoding = String(res.headers["content-encoding"] ?? "").trim().toLowerCase();
   let stream: Readable = res;
   if (encoding === "gzip" || encoding === "x-gzip") stream = res.pipe(zlib.createGunzip());
-  else if (encoding === "deflate") stream = res.pipe(zlib.createInflate());
+  else if (encoding === "deflate") stream = res.pipe(new DeflateDecoder());
   else if (encoding === "br") stream = res.pipe(zlib.createBrotliDecompress());
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
