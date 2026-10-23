@@ -562,8 +562,11 @@ root entry and that matrix in step.
   `test/runtime-install-timeout.test.js` (a stub npm on the PATH, a node script, and an
   `execPath` with no `npm-cli.js` beside it, offline): an npm that never exits is killed after
   `timeoutMs`, rejecting with a `RuntimeInstallError` saying npm did not finish and leaving no
-  temporary folder (skipped on Windows, mnemos-abn); with no npm beside node the one on the PATH
-  is run with npm's install flags in a temporary folder, and what it installs is imported.
+  temporary folder, on Windows through npm.cmd's cmd.exe too; with no npm beside node the one on
+  the PATH is run with npm's install flags in a temporary folder, and what it installs is imported.
+  `test/runtime-install-kill-tree.test.js` (a wrapper npm on the PATH that starts a stub npm
+  without exec, offline): the timeout still rejects though the stub holds the output pipes, and
+  on Windows taskkill ends the stub with npm.cmd's cmd.exe.
   `test/runtime-prune.test.js` (runtime folders laid out by hand, no npm): a load from the cache
   touches its folder's marker; other versions' folders are removed once their marker (or, from
   before markers, their loader) is 30 days old and kept before, a folder installed long ago
@@ -578,8 +581,7 @@ root entry and that matrix in step.
   runtime again and `import()` returns the module it already had. `e2e/semantic.e2e.js`: the
   packed tarball installs without the library, and the first start installs it from the
   registry.
-- **Untested**: the install's timeout on Windows, where npm on the PATH runs through cmd.exe
-  (mnemos-abn), and the 15-minute default itself (tests pass a small `timeoutMs`); a runtime
+- **Untested**: the 15-minute default itself (tests pass a small `timeoutMs`); a runtime
   folder pruned in use on Windows, where the real runtime's loaded onnxruntime DLL would keep it
   from being renamed; the download's progress events from the real library outside the e2e suites
   (`e2e/semantic.e2e.js` downloads the real model in CI when its cache misses).

@@ -4,9 +4,8 @@
 // exits or lays out a stand-in package as npm would, and the node it is looked
 // for beside (execPath) has no npm-cli.js.
 //
-// The timeout is skipped on Windows: npm on the PATH is npm.cmd, run through
-// cmd.exe, and killing cmd.exe leaves the npm it started holding the output
-// pipes (mnemos-abn).
+// On Windows npm on the PATH is npm.cmd, run through cmd.exe: the timeout
+// ends the stub with it (taskkill /T).
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -87,7 +86,7 @@ function alive(pid) {
 
 test(
   "timeout: an npm that never exits is killed, rejecting with RuntimeInstallError and leaving no temporary folder",
-  { skip: process.platform === "win32" && "killing npm.cmd's cmd.exe leaves npm running (mnemos-abn)", timeout: 30_000 },
+  { timeout: 30_000 },
   async () => {
     const dir = freshDir();
     const log = path.join(root, `stub-${n}.json`);

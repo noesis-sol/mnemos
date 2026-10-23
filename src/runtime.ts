@@ -24,7 +24,7 @@
  * versions' folders whose marker is UNUSED_RUNTIME_MS old.
  */
 
-import { spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -283,6 +283,19 @@ export function stopInstalls(): void {
   for (const kill of runningInstalls) kill();
 }
 
+/**
+ * Stops npm. npm.cmd (shell) runs in cmd.exe, and killing cmd.exe alone would
+ * leave the npm it started running, so its whole tree is ended with taskkill:
+ * synchronously, as it also runs from the process's "exit".
+ */
+function stopNpm(child: ChildProcess, tree: boolean): void {
+  if (tree && child.pid !== undefined) {
+    const result = spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    if (result.status === 0) return;
+  }
+  child.kill();
+}
+
 /** Runs `npm install` in `cwd`, its output kept from stdout (the MCP channel). */
 function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, execPath?: string): Promise<void> {
   const npm = npmCommand(env, execPath);
@@ -297,13 +310,17 @@ function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, execPath
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
     // npm would go on writing into the cache directory after mnemos exits.
-    const kill = () => child.kill();
+    let killed = false;
+    const kill = () => {
+      killed = true;
+      stopNpm(child, npm.shell);
+    };
     process.once("exit", kill);
     runningInstalls.add(kill);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill();
+      kill();
     }, timeoutMs);
     timer.unref();
     let settled = false;
@@ -317,6 +334,12 @@ function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number, execPath
       else resolve();
     };
     child.on("error", (err) => done(new RuntimeInstallError(`npm could not be started: ${err.message}`)));
+    // A process npm started that outlived the kill would hold the pipes open, and "close" wait for it.
+    child.on("exit", () => {
+      if (!killed) return;
+      child.stdout.destroy();
+      child.stderr.destroy();
+    });
     child.on("close", (code, signal) => {
       if (code === 0) return done();
       const why = timedOut ? `npm did not finish within ${timeoutMs / 1000} s` : `npm install failed (${signal ?? `exit code ${code}`})`;

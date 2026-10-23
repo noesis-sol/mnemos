@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- On Windows with npm found only on the PATH, the embedding runtime's install now stops after its 15-minute timeout, and at shutdown, with npm itself ended: npm.cmd runs in cmd.exe, and mnemos ended only cmd.exe, so the install waited on npm for as long as it ran, and npm went on writing into the cache.
 - When the index cannot be written because the disk is full (or on a disk error, a lock held too long or out of memory), the semantic indexer's status and log and the page fetcher's error now say so ("database or disk is full") instead of "cannot rollback - no transaction is active", which hid the real cause.
 - A headless browser that failed to start (in the middle of an update, or a launch that timed out on a busy machine) is tried again after 1 minute, then after a wait that doubles up to an hour, and pages that need a browser are rendered once it starts. Before, one failed start turned page rendering off until mnemos restarted, and the status kept saying the browser "did not start". No browser found, `MNEMOS_BROWSER=0` or naming no file, and playwright-core not installed still turn it off until restart.
 - A headless browser that crashes or is killed while mnemos renders pages with it fails the page it had open, deletes its temporary profile at once, and is started afresh for the next page. Before, every page after the crash failed with "Target page, context or browser has been closed" until the fetcher next closed the browser, and the dead browser's profile stayed in the temporary directory until then.
