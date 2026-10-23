@@ -7,10 +7,9 @@
 // the running mnemos imported stays in memory and goes on embedding (the real
 // one imports onnxruntime-node and sharp when it is imported, so nothing is
 // read from the folder later); and should its embedder load again after a
-// failure, it finds the runtime missing: with installing off it is
-// unavailable for good, saying the library could not be loaded, and with
-// installing on it installs the runtime again and gets the library it already
-// had (import() keeps a module by its URL). On Windows the real runtime's
+// failure, it reuses the library it imported and loads only the model, so it
+// neither finds the runtime missing nor installs it again, with installing on
+// or off. On Windows the real runtime's
 // loaded onnxruntime DLL would keep its folder from being renamed, so it would
 // be kept; the stand-in here holds no file open, so it is removed there too.
 //
@@ -130,8 +129,11 @@ function oldEmbedder(dir, { now, install, env, onInstall = () => {} }) {
         },
       });
       libs.push(lib);
-      if (!failing.model) return lib;
-      return { ...lib, AutoModel: { from_pretrained: async () => Promise.reject(new Error("fetch failed (test)")) } };
+      const from_pretrained = async (...args) => {
+        if (failing.model) throw new Error("fetch failed (test)");
+        return lib.AutoModel.from_pretrained(...args);
+      };
+      return { ...lib, AutoModel: { from_pretrained } };
     },
   });
   return { embedder, libs, failing };
@@ -161,7 +163,7 @@ test("in use: another version's load removes the running mnemos's folder, and it
   assert.equal(libs.length, 1, "a ready embedder does not load the library again");
 });
 
-test("in use: a load after a failure, with installing off, leaves the embedder unavailable for good, and writes nothing", async () => {
+test("in use: a load after a failure, with installing off, reuses the library it imported, and writes nothing", async () => {
   const dir = installedDir();
   let now = 1_000;
   const { embedder, libs, failing } = oldEmbedder(dir, { now: () => now, install: false });
@@ -172,20 +174,14 @@ test("in use: a load after a failure, with installing off, leaves the embedder u
   await newVersionLoads(dir);
   failing.model = false;
   now += RETRY_MIN_MS;
-  await assert.rejects(embedder.embed(["x"], "query"), EmbedderUnavailableError);
-  const status = embedder.status();
-  assert.equal(status.state, "unavailable");
-  assert.match(status.reason, /could not be loaded: Cannot find package/);
-  assert.equal(status.retry_at, undefined, "never retried");
-  assert.equal(libs.length, 1);
+  const [vector] = await embedder.embed(["x"], "query");
+  assert.equal(vector[0], 1);
+  assert.deepEqual(embedder.status(), { state: "ready" });
+  assert.equal(libs.length, 1, "the library is not loaded again");
   assert.deepEqual(fs.readdirSync(runtimeDir(dir)), [runtimeFolder(NEW)], "nothing written");
-
-  now += 10 * RETRY_MIN_MS;
-  await assert.rejects(embedder.embed(["x"], "query"), EmbedderUnavailableError);
-  assert.equal(libs.length, 1, "not tried again");
 });
 
-test("in use: a load after a failure, with installing on, installs the runtime again and gets the library it had", { timeout: 30_000 }, async () => {
+test("in use: a load after a failure, with installing on, reuses the library it imported, and installs nothing", async () => {
   const dir = installedDir();
   const log = path.join(root, `stub-${n}.log`);
   let now = 1_000;
@@ -193,7 +189,6 @@ test("in use: a load after a failure, with installing on, installs the runtime a
   const { embedder, libs, failing } = oldEmbedder(dir, { now: () => now, env: stubEnv(log), onInstall: () => installs++ });
   failing.model = true;
   await assert.rejects(embedder.embed(["x"], "query"), EmbedderUnavailableError);
-  assert.equal(installs, 0, "the runtime was there");
 
   await newVersionLoads(dir);
   failing.model = false;
@@ -201,13 +196,8 @@ test("in use: a load after a failure, with installing on, installs the runtime a
   const [vector] = await embedder.embed(["x"], "query");
   assert.equal(vector[0], 1);
   assert.deepEqual(embedder.status(), { state: "ready" });
-  assert.equal(installs, 1, "npm ran once");
-  assert.equal(fs.readFileSync(log, "utf8").trim().split("\n").length, 1);
-  assert.equal(libs.length, 2);
-  assert.equal(libs[1], libs[0], "import() returns the module it already had, by its URL");
-
-  const folder = path.join(runtimeDir(dir), runtimeFolder(OLD));
-  assert.ok(fs.existsSync(path.join(folder, "load.mjs")), "the runtime is back");
-  assert.ok(Date.now() - fs.statSync(path.join(folder, LAST_USED)).mtimeMs < DAY, "and marked used");
-  assert.deepEqual(fs.readdirSync(runtimeDir(dir)).sort(), [runtimeFolder(NEW), runtimeFolder(OLD)].sort());
+  assert.equal(installs, 0, "npm never ran");
+  assert.ok(!fs.existsSync(log), "the stub npm never ran");
+  assert.equal(libs.length, 1, "the library is not loaded again");
+  assert.deepEqual(fs.readdirSync(runtimeDir(dir)), [runtimeFolder(NEW)], "the runtime is not installed again");
 });

@@ -230,6 +230,12 @@ export class ModelEmbedder implements Embedder {
   private readonly now: () => number;
   private current: EmbedderStatus = { state: "not_started" };
   private loading: Promise<{ tokenizer: Tokenizer; model: Model }> | undefined;
+  /**
+   * The library once imported: a retry after the model failed to load reuses
+   * it, so a runtime folder another version's mnemos pruned meanwhile is
+   * neither needed nor installed again.
+   */
+  private transformers: Transformers | undefined;
   private failures = 0;
   /** Model runs, one at a time. */
   private queue: Promise<unknown> = Promise.resolve();
@@ -299,6 +305,7 @@ export class ModelEmbedder implements Embedder {
    * Loads the model once; concurrent callers share the attempt. After a
    * failure, calls before retry_at reject at once and the first call after
    * it tries again, and so does a runtime npm failed to install. A library
+   * once imported is kept, and a retry loads only the model with it. A library
    * that cannot be imported is never retried, nor anything after close().
    */
   private load(): Promise<{ tokenizer: Tokenizer; model: Model }> {
@@ -319,7 +326,7 @@ export class ModelEmbedder implements Embedder {
     this.current = { state: "loading" };
     let transformers: Transformers;
     try {
-      transformers = await this.importTransformers(() => {
+      transformers = this.transformers ??= await this.importTransformers(() => {
         this.current = { state: "installing" };
       });
     } catch (err) {
