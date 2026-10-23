@@ -92,6 +92,8 @@ export interface Embedder {
   /** One normalised vector per text, in order. Rejects with EmbedderUnavailableError while unavailable. */
   embed(texts: string[], kind: EmbedKind): Promise<Float32Array[]>;
   status(): EmbedderStatus;
+  /** Shutdown: aborts a model download in progress, and has every later embed() reject. */
+  close(): void;
 }
 
 export class EmbedderUnavailableError extends Error {
@@ -147,12 +149,35 @@ export interface ModelEmbedderOptions {
 /** transformers' logger writes info to stdout, which is the MCP channel: errors only, and those go to stderr. */
 const LOG_LEVEL_ERROR = 40;
 
+/** Why embed() rejects once the embedder is closed. */
+export const SHUTTING_DOWN = "mnemos is shutting down";
+
+type Fetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
+
+/** The fetch each of configureTransformers' wrappers calls, so a later call wraps that one again, not the wrapper. */
+const wrappedFetches = new WeakMap<Fetch, Fetch>();
+
 /**
  * Points the library at <dir>/models: downloads land there (env.cacheDir),
  * and once complete they are read from there as local files
- * (env.localModelPath). `remote` allows the download.
+ * (env.localModelPath). `remote` allows the download. The library takes no
+ * AbortSignal, so its fetches (env.fetch, wrapped) are given `signal`:
+ * aborting it stops a download in progress, body and all.
  */
-export function configureTransformers(env: Record<string, unknown>, models: string, remote: boolean): void {
+export function configureTransformers(
+  env: Record<string, unknown>,
+  models: string,
+  remote: boolean,
+  signal?: AbortSignal,
+): void {
+  if (signal) {
+    const current = typeof env.fetch === "function" ? (env.fetch as Fetch) : undefined;
+    const inner: Fetch = (current && wrappedFetches.get(current)) ?? current ?? fetch;
+    const wrapper: Fetch = (input, init = {}) =>
+      inner(input, { ...init, signal: init.signal ? AbortSignal.any([init.signal, signal]) : signal });
+    wrappedFetches.set(wrapper, inner);
+    env.fetch = wrapper;
+  }
   env.cacheDir = models;
   env.useFSCache = true;
   env.useBrowserCache = false;
@@ -208,6 +233,8 @@ export class ModelEmbedder implements Embedder {
   private failures = 0;
   /** Model runs, one at a time. */
   private queue: Promise<unknown> = Promise.resolve();
+  /** Aborted by close(): the library's fetches, so a download stops at shutdown. */
+  private readonly abort = new AbortController();
 
   constructor(options: ModelEmbedderOptions = {}) {
     this.models = modelsDir(options.dir);
@@ -222,6 +249,18 @@ export class ModelEmbedder implements Embedder {
 
   status(): EmbedderStatus {
     return { ...this.current };
+  }
+
+  /**
+   * Shutdown: aborts the model's download, whose fetches would otherwise keep
+   * the process alive until about 135 MB have come in for a client that is
+   * gone. The load then fails, and it and every later embed() reject with
+   * SHUTTING_DOWN. A runtime install is stopped by runtime.ts' stopInstalls().
+   */
+  close(): void {
+    if (this.abort.signal.aborted) return;
+    this.abort.abort();
+    this.current = { state: "unavailable", reason: SHUTTING_DOWN };
   }
 
   /** Whether every model file is already in the models folder. */
@@ -260,9 +299,10 @@ export class ModelEmbedder implements Embedder {
    * Loads the model once; concurrent callers share the attempt. After a
    * failure, calls before retry_at reject at once and the first call after
    * it tries again, and so does a runtime npm failed to install. A library
-   * that cannot be imported is never retried.
+   * that cannot be imported is never retried, nor anything after close().
    */
   private load(): Promise<{ tokenizer: Tokenizer; model: Model }> {
+    if (this.abort.signal.aborted) return Promise.reject(new EmbedderUnavailableError(SHUTTING_DOWN));
     if (this.loading) return this.loading;
     const s = this.current;
     if (s.state === "unavailable" && (s.retry_at === undefined || this.now() < s.retry_at)) {
@@ -283,6 +323,7 @@ export class ModelEmbedder implements Embedder {
         this.current = { state: "installing" };
       });
     } catch (err) {
+      if (this.abort.signal.aborted) throw this.closed();
       if (err instanceof RuntimeInstallError) {
         throw this.failed(`${TRANSFORMERS} could not be installed: ${message(err)}`);
       }
@@ -290,10 +331,11 @@ export class ModelEmbedder implements Embedder {
       this.current = { state: "unavailable", reason };
       throw new EmbedderUnavailableError(reason);
     }
+    if (this.abort.signal.aborted) throw this.closed();
     this.current = { state: "loading" };
     try {
       const downloaded = this.downloaded();
-      configureTransformers(transformers.env, this.models, !downloaded);
+      configureTransformers(transformers.env, this.models, !downloaded, this.abort.signal);
       // Downloaded: the revision folder, read as a local model. Not yet: the
       // repository at the pinned revision, which the library caches there.
       const id = downloaded ? `${MODEL_ID}/${MODEL_REVISION}` : MODEL_ID;
@@ -304,12 +346,23 @@ export class ModelEmbedder implements Embedder {
       }
       const tokenizer = await transformers.AutoTokenizer.from_pretrained(id, options);
       const model = await transformers.AutoModel.from_pretrained(id, { ...options, dtype: MODEL_DTYPE });
+      if (this.abort.signal.aborted) {
+        await model.dispose?.();
+        throw this.closed();
+      }
       this.current = { state: "ready" };
       this.failures = 0;
       return { tokenizer, model };
     } catch (err) {
+      if (this.abort.signal.aborted) throw this.closed();
       throw this.failed(`the model could not be loaded: ${message(err)}`);
     }
+  }
+
+  /** Closed: unavailable for good; the error to throw. */
+  private closed(): EmbedderUnavailableError {
+    this.current = { state: "unavailable", reason: SHUTTING_DOWN };
+    return new EmbedderUnavailableError(SHUTTING_DOWN);
   }
 
   /** Unavailable until a doubling backoff has passed; the error to throw. */
@@ -399,6 +452,9 @@ export class FakeEmbedder implements Embedder {
     const { unavailable } = this.options;
     return unavailable ? { state: "unavailable", reason: unavailable } : { state: "ready" };
   }
+
+  /** Nothing to stop: the fake downloads nothing. */
+  close(): void {}
 
   async embed(texts: string[], _kind: EmbedKind): Promise<Float32Array[]> {
     const { gate, log, unavailable, delayMs } = this.options;

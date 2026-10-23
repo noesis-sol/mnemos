@@ -286,12 +286,13 @@ server.registerTool(
 
 /**
  * Aborts the fetches in flight and gives the fetcher leases up, so another
- * mnemos can take over, and stops the indexing and a runtime install, so the
- * process exits once the client is gone.
+ * mnemos can take over, and stops the indexing, a runtime install and a model
+ * download, so the process exits once the client is gone.
  */
 function shutdown(): void {
   indexes.stop();
   stopInstalls();
+  embedder.close();
 }
 
 async function main(): Promise<void> {

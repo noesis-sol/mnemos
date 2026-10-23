@@ -604,8 +604,10 @@ root entry and that matrix in step.
   file changed since the last run read it, failed or not, so the store's bookmarks (and the
   fetcher's pending pages) follow the file with no `semantic_search`; `close()` stops it.
   On stdin's end, SIGTERM or SIGINT, `SourceIndexes.stop()` closes every indexer (for good: a
-  run in progress stops at its next batch and none starts again) and `stopInstalls()`
-  (`src/runtime.ts`) kills a running npm install of the runtime, so the process exits.
+  run in progress stops at its next batch and none starts again), `stopInstalls()`
+  (`src/runtime.ts`) kills a running npm install of the runtime, and `ModelEmbedder.close()`
+  aborts the model's download (the library's `env.fetch` is given its `AbortSignal`) and has
+  every later `embed()` reject ("mnemos is shutting down"), so the process exits.
   Errors go to `status()` and stderr, never into a tool. The server-spawning tests
   set `MNEMOS_CACHE_DIR` to a temporary directory and `MNEMOS_EMBEDDER=fake`, so they never
   touch the user's cache or the real model.
@@ -644,13 +646,22 @@ root entry and that matrix in step.
   process: `close()` mid-run drops the run a change queued after it and ignores later
   `checkForChanges()`, `pagesChanged()` and `start()`; `stopInstalls()` kills a stand-in npm
   that never finishes (`RuntimeInstallError`, no temporary folder left) and refuses a later
-  install.
+  install. `test/shutdown-model-download.test.js`: a stand-in library whose `from_pretrained`
+  downloads through `env.fetch` from a local server that sends 64 KB and stalls; in process,
+  `close()` mid-download rejects the load within 2 s, closes the connection, and leaves the
+  embedder unavailable for good (no import, no fetch again), and before any load rejects
+  without importing; `configureTransformers` with a signal aborts a body mid-read and keeps a
+  fetch's own signal, wraps an `env.fetch` already set (not its own wrapper again), without
+  one leaves `env.fetch` alone; e2e (a raw pipe, the stand-in put
+  in the library's place by a `--import` resolve hook): closing stdin mid-download exits
+  within 3 s.
 - **Untested**: the real model indexing titles outside `e2e/semantic.e2e.js` (which also
   checks a restart reports every title done and embeds none again, and the same edits while
   the server runs with the real model).
 - **Tickets**: mnemos-tc4.7; mnemos-tc4.3 (`semantic_search` calls `checkForChanges()`);
   mnemos-tc4.13 (acceptance on GitHub); mnemos-gts.14 (edits while the server runs, over MCP);
-  mnemos-83t (stopping the indexing at shutdown)
+  mnemos-83t (stopping the indexing at shutdown); mnemos-do2 (stopping the model download at
+  shutdown)
 
 ## semantic_search
 
