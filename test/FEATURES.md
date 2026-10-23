@@ -70,9 +70,8 @@ root entry and that matrix in step.
   version (`serveUnsupportedNode("20.17.0")` in a child): handshake, `serverInfo`, instructions,
   the same six tool names the real server lists (checked against `dist/cli.js` on this Node),
   and every tool answering `isError` with the message. `e2e/old-node.e2e.js` runs the bin itself
-  on Node 20 in CI.
-- **Untested**: Node 18 (the MCP SDK's minimum; `cli.ts` and `unsupported-node.ts` avoid newer
-  builtins, but no CI job runs 18).
+  on Node 18 (the MCP SDK's minimum) and 20 in CI's old-node job; `test/old-node-ci.test.js`
+  keeps that job's matrix and steps in place.
 - **Tickets**: mnemos-nru; mnemos-gts.13 (Node 18 in CI)
 
 ## MCP server start and handshake

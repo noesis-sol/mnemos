@@ -1,6 +1,7 @@
 // The bin on a Node older than mnemos supports, for real: CI's old-node job
-// runs this file on Node 20 (`node --test e2e/old-node.e2e.js`, after building),
-// where the server itself cannot even load (node:sqlite does not exist). The
+// runs this file on Node 18 and 20 (`node --test e2e/old-node.e2e.js`, after
+// building), where the server itself cannot even load (node:sqlite does not
+// exist), so it uses nothing newer than Node 18's node:test. The
 // bin must still complete the MCP handshake and answer with the explanation,
 // so the user hears it from the assistant instead of seeing "failed to
 // connect". Its name keeps it out of the discovery `npm test` does; on a

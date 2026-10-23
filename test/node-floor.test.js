@@ -23,7 +23,10 @@ test("the running Node meets the floor", () => {
 });
 
 test("CI runs Node 22 and 24", () => {
-  const matrix = read(".github/workflows/ci.yml").match(/^\s*node: \[(.*)\]\s*$/m);
-  assert.ok(matrix, "no node matrix in ci.yml");
+  // The test job only: the old-node job has a node matrix of its own.
+  const job = read(".github/workflows/ci.yml").match(/^  test:\n((?:(?:    .*)?\n)*)/m);
+  assert.ok(job, "no test job in ci.yml");
+  const matrix = job[1].match(/^\s*node: \[(.*)\]\s*$/m);
+  assert.ok(matrix, "no node matrix in ci.yml's test job");
   assert.deepEqual(matrix[1].split(",").map((v) => v.trim()), ["22", "24"]);
 });
