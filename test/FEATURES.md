@@ -717,7 +717,12 @@ root entry and that matrix in step.
   before a refill, a fetch and a page's store): it stores nothing over the new holder's page and
   fetches no more; a lone holder whose lease lapsed with nobody taking it keeps it and stores
   and fetches on.
-- **Untested**: real websites (not tested, by design); the worker dying mid-page.
+  `test/extract-worker-crash.test.js` (in process, the worker killed with `terminate()` a moment
+  into a 3 MB page): the page being read, and every page waiting behind it, fail with the
+  worker's exit code and none hangs; the next `extract()` starts a fresh worker; a `Fetcher`
+  with a fake fetch records that page `failed` with the first backoff and fetches the next page
+  to `ok` in the fresh worker.
+- **Untested**: real websites (not tested, by design).
 - **Tickets**: mnemos-tc4.9; mnemos-dbz (new bookmarks before refreshes); mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
   mnemos-tc4.5 (`no_content` pages through a headless browser); mnemos-nma (one pool over every source's fetcher);
   mnemos-gts.4 (the lease changing holders); mnemos-gts.11 (the worker dying)
