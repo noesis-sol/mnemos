@@ -609,15 +609,27 @@ export class IndexStore {
     return Number(result.changes);
   }
 
-  /** Every page with its status, reason and next attempt (no text): what the fetcher re-checks against the policy. */
-  pageStates(): { url: string; status: PageStatus; reason: string | null; next_attempt_at: number | null }[] {
+  /**
+   * Every page with its status, reason, schedule and fail count (no text):
+   * what the fetcher re-checks against the policy and the browser's absence.
+   */
+  pageStates(): {
+    url: string;
+    status: PageStatus;
+    reason: string | null;
+    fetched_at: number | null;
+    fail_count: number;
+    next_attempt_at: number | null;
+  }[] {
     return this.db
-      .prepare("SELECT url, status, reason, next_attempt_at FROM pages ORDER BY url")
+      .prepare("SELECT url, status, reason, fetched_at, fail_count, next_attempt_at FROM pages ORDER BY url")
       .all()
       .map((r) => ({
         url: r.url as string,
         status: r.status as PageStatus,
         reason: r.reason as string | null,
+        fetched_at: r.fetched_at === null ? null : Number(r.fetched_at),
+        fail_count: Number(r.fail_count),
         next_attempt_at: r.next_attempt_at === null ? null : Number(r.next_attempt_at),
       }));
   }
@@ -667,17 +679,20 @@ export class IndexStore {
   }
 
   /**
-   * Pages whose chunks are not cut from their text as it is: ok pages whose
-   * content_hash is not the one their chunks came from, and pages that have
-   * lost their text (no longer ok, and not just failing for now) but still
-   * have chunks from it.
+   * Pages whose chunks are not cut from their text as it is: pages with text
+   * whose content_hash is not the one their chunks came from, and pages that
+   * have lost their text (not just failing for now) but still have chunks
+   * from it. A page has text when it is ok, or needs_browser with the text it
+   * had when ok, kept until the browser has had the last word.
    */
   pagesToChunk(): { url: string; content_hash: string | null }[] {
     return this.db
       .prepare(
-        `SELECT url, CASE WHEN status = 'ok' THEN content_hash END AS content_hash FROM pages
-         WHERE (status = 'ok' AND content_hash IS NOT NULL AND content_hash IS NOT chunked_hash)
-            OR (status NOT IN ('ok', 'failed') AND chunked_hash IS NOT NULL)
+        `SELECT url, CASE WHEN has_text THEN content_hash END AS content_hash FROM (
+           SELECT *, (status = 'ok' OR status = 'needs_browser') AND content_hash IS NOT NULL AS has_text FROM pages
+         )
+         WHERE (has_text AND content_hash IS NOT chunked_hash)
+            OR (NOT has_text AND status NOT IN ('ok', 'failed') AND chunked_hash IS NOT NULL)
          ORDER BY url`,
       )
       .all()

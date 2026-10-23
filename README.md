@@ -370,7 +370,11 @@ skipped, not stored as the browser's error page. What the page loads gets the ho
 domains, no private addresses, with every connection and redirect hop going
 through a local proxy that checks the host's DNS answers), not the URL rules.
 mnemos downloads no browser: without one, `semantic_search`'s status says how
-many pages need one.
+many pages need one, and those pages are fetched plainly again on the failed
+pages' schedule (1 hour, 6 hours, 1 day, 7 days, then every 30 days), in
+case the site serves its text again. A page that was read and comes back
+needing JavaScript keeps its passages until the browser has read it (or, with
+no browser, until a plain fetch reads it again).
 
 Every plain fetch follows a fixed policy ([`src/fetch.ts`](src/fetch.ts)):
 

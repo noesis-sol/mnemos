@@ -755,7 +755,12 @@ root entry and that matrix in step.
   rendering off, pages stay `needs_browser` and `semantic_search`'s `status.browser` says
   "N pages need a browser; set MNEMOS_BROWSER" (or what is missing). `duePages` leaves
   `needs_browser` pages out, so the 30-day refresh never queues one for a plain fetch as well;
-  the browser waits out a next attempt set on one.
+  the browser waits out a next attempt set on one. With no browser, `refill` fetches them
+  plainly again on a failed page's backoff from their last fetch (not stored, so a later run
+  with a browser renders them at once), each shell counting a failure. An ok page whose
+  refresh is a shell keeps its text, `content_hash` and chunks (`keptText`) until the browser
+  has had the last word: its text replaces them only if it differs, its `no_content` drops
+  them.
 - **Tests**: `test/headless-resolve.test.js` (unit, injected file system and environment): each
   step of the order wins over the later ones, the order itself, nothing found, `0`, a path that
   is not there, macOS home Applications, Linux and Windows paths and prefixes.
@@ -767,7 +772,13 @@ root entry and that matrix in step.
   browser renders them without fetching them again. `test/needs-browser-due.test.js` (in
   process, a fake renderer and clock): `duePages` leaves out a `needs_browser` page with a next
   attempt due; such a page 30 days old is rendered once and not fetched plainly; one with a
-  next attempt to come is not rendered before it, and is at it. `test/policy-proxy.test.js`: plain requests
+  next attempt to come is not rendered before it, and is at it. `test/shell-refresh.test.js`
+  (in process, a fake fetch, renderer and clock, with the indexer): an ok page whose refresh
+  is a shell keeps its chunks; with no browser it is fetched plainly again 1 h, 1 h, 6 h on,
+  not a minute before, and is ok with the new text once the site serves it; a browser
+  rendering the same text embeds nothing, other text replaces the chunks, no text drops them;
+  `pagesToChunk`, `keptText` and `adoptedRow` keep a needs_browser page's kept text.
+  `test/policy-proxy.test.js`: plain requests
   and CONNECT tunnels reach an allowed host; local names, private literals, names resolving to
   a private address and DNS failures are refused before connecting.
   `test/headless-render.test.js` (e2e, a real installed browser; skipped with the reason when
@@ -789,6 +800,7 @@ root entry and that matrix in step.
   every push and pull request, macOS and Windows weekly); a browser that crashes mid-page; the
   20 s limit with a real slow page.
 - **Tickets**: mnemos-tc4.5; mnemos-g70 (needs_browser pages queued once after 30 days);
+  mnemos-w3q (a shell refresh keeps an ok page's chunks; plain fetches with no browser);
   mnemos-o3a (one browser shared across sources); mnemos-gts.12 (a crash or hang mid-page)
 
 ## Tool errors over MCP

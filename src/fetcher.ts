@@ -36,8 +36,11 @@
  * BROWSER_PAGES at a time, under the same per-domain rules. The browser is
  * launched on the first such page and closed once none is left; the fetchers
  * of every source share one (SharedRenderer), closed once none of them has a
- * page left for it. With no browser or no playwright-core, those pages stay needs_browser and
- * browserNote() says so.
+ * page left for it. A page that was ok keeps its text and chunks meanwhile,
+ * and the browser's text replaces them (or its no_content drops them). With
+ * no browser or no playwright-core, those pages stay needs_browser,
+ * browserNote() says so, and they are fetched plainly again on a failed
+ * page's backoff, so one whose site serves its text again is ok again.
  *
  * A bookmarked PDF is fetched as bytes and its text read with pdf.js (pdf.ts),
  * then stored like a page's: the same content_hash, chunks and embeddings. A
@@ -210,6 +213,16 @@ export function pageResult(
 }
 
 /**
+ * The text a page now needs_browser keeps from its row before: an ok page's
+ * (or one it kept already), so its chunks stay until the browser has had the
+ * last word; none for a page that had no text.
+ */
+export function keptText(previous: Required<PageRow>): Pick<PageRow, "content_hash" | "text"> {
+  if ((previous.status !== "ok" && previous.status !== "needs_browser") || previous.content_hash === null) return {};
+  return { content_hash: previous.content_hash, text: previous.text };
+}
+
+/**
  * This source's page row from the row another source's index has for the
  * same URL, when that one was fetched within SHARED_FRESH_MS and after this
  * source's last fetch of it; undefined when the page must be fetched here.
@@ -246,7 +259,13 @@ export function adoptedRow(
       if (theirs.next_attempt_at === null || (theirs.reason !== null && CONFIG_SKIPS.has(theirs.reason))) return undefined;
       return row;
     case "needs_browser":
-      return browser ? undefined : { ...row, fail_count: previous.fail_count, next_attempt_at: null };
+      if (browser) return undefined;
+      return {
+        ...row,
+        fail_count: previous.fail_count,
+        next_attempt_at: null,
+        ...(theirs.content_hash === null ? keptText(previous) : {}),
+      };
     case "failed": {
       const fails = previous.fail_count + 1;
       return { ...row, fail_count: fails, next_attempt_at: Math.max(theirs.next_attempt_at ?? 0, at + backoffMs(fails)) };
@@ -706,14 +725,17 @@ export class Fetcher {
       due.push({ url, domain: domainKey(url), ...bookmark, pending });
     }
     // Pages left needing a browser by an earlier run (or one that had none); duePages leaves
-    // them to this loop, which waits out a next attempt set on one, like duePages.
-    if (!this.browserUnavailable) {
-      for (const page of store.pageStates()) {
-        const bookmark = info.get(page.url);
-        if (page.status !== "needs_browser" || !bookmark || this.active.has(page.url)) continue;
-        if (page.next_attempt_at !== null && page.next_attempt_at > now) continue;
-        due.push({ url: page.url, domain: domainKey(page.url), ...bookmark, browser: true });
-      }
+    // them to this loop, which waits out a next attempt set on one, like duePages. With no
+    // browser here they are fetched plainly again, on a failed page's backoff from their last
+    // fetch, so a site that serves its text again comes back. That schedule is not stored: a
+    // later run with a browser renders them at once.
+    const browser = !this.browserUnavailable;
+    for (const page of store.pageStates()) {
+      const bookmark = info.get(page.url);
+      if (page.status !== "needs_browser" || !bookmark || this.active.has(page.url)) continue;
+      const at = page.next_attempt_at ?? (browser ? null : (page.fetched_at ?? now) + backoffMs(page.fail_count));
+      if (at !== null && at > now) continue;
+      due.push({ url: page.url, domain: domainKey(page.url), ...bookmark, browser });
     }
     due.sort((a, b) => Number(b.pending ?? false) - Number(a.pending ?? false) || b.added - a.added);
     this.queue = due;
@@ -936,9 +958,12 @@ export class Fetcher {
       let row = pageResult(item.url, outcome, extraction, previous.fail_count, this.now());
       // A PDF with no text is a scan, not a JavaScript shell: the browser would see no more.
       if (row.status === "no_content" && !item.browser && !pdf) {
-        // A JavaScript shell, perhaps: the browser has the last word. The fail
-        // count carries over, so a page the browser keeps failing backs off.
-        row = { ...row, status: "needs_browser", fail_count: previous.fail_count };
+        // A JavaScript shell, perhaps (or a bot check that day): the browser has
+        // the last word, and an ok page keeps its text and chunks until it has.
+        // The fail count carries over, so a page the browser keeps failing backs
+        // off; with no browser it counts this fetch, so plain fetches back off too.
+        const fails = previous.fail_count + Number(this.browserUnavailable !== undefined);
+        row = { ...row, status: "needs_browser", fail_count: fails, ...keptText(previous) };
         if (!this.browserUnavailable) this.queue.unshift({ ...item, browser: true });
       }
       this.store.upsertPage(row);
