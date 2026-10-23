@@ -872,7 +872,8 @@ root entry and that matrix in step.
   and Brave where they install; driven by playwright-core, an optionalDependency loaded with
   `import()`. Launched on the first such page, at most 2 pages at once under the fetcher's
   per-domain rules, closed once none is left and on stop; a fresh temporary profile, deleted on
-  close; images, media and fonts dropped; route interception applies `checkUrl` (all of it to
+  close; a browser that crashes fails its open pages, its profile is deleted, and the next page
+  launches a new one; images, media and fonts dropped; route interception applies `checkUrl` (all of it to
   the page, the host rules to what it loads), and every connection, redirect hops included, goes
   through a local proxy that checks the host and its DNS answers. 20 s per page, then the
   network idle or 3 s; Readability on `page.content()`. The result is stored as a plain fetch's
@@ -915,6 +916,11 @@ root entry and that matrix in step.
   requested; a redirect to an allowed page renders there; a script or meta refresh navigating
   to the logout URL is skipped, not stored as Chrome's error page; a script navigating to a host
   that does not resolve is refused (http) or failed (https).
+  `test/headless-crash.test.js` (e2e, a real installed browser; skipped likewise): a page whose
+  response never ends, with a 2 s `timeoutMs`, fails with reason `timeout` at the limit; the
+  browser killed mid-page (by the PID of the one the test launched) fails that render without
+  throwing, and the next render launches a fresh browser, with a fresh profile, that renders its
+  page; the temporary profile is deleted in both cases.
   `test/shared-renderer.test.js` (in process, a fake renderer): one browser shared by the
   fetchers of several bookmarks files (`SharedRenderer`), closed only when its last user closes
   it, a user that renders without launching counted too; two sources' `Fetcher`s launch it once
@@ -922,11 +928,12 @@ root entry and that matrix in step.
   `e2e/semantic.e2e.js` (see Suites): the installed package renders a JavaScript-only page in
   the runner's Chrome and finds it by its text; with `MNEMOS_BROWSER=0` in CI it fails.
 - **Untested**: Windows and Linux browsers outside `.github/workflows/semantic.yml` (ubuntu on
-  every push and pull request, macOS and Windows weekly); a browser that crashes mid-page; the
-  20 s limit with a real slow page.
+  every push and pull request, macOS and Windows weekly); the 20 s default itself (the limit is
+  tested with a 2 s `timeoutMs`); a crash through the `Fetcher` (the test calls `render`).
 - **Tickets**: mnemos-tc4.5; mnemos-g70 (needs_browser pages queued once after 30 days);
   mnemos-w3q (a shell refresh keeps an ok page's chunks; plain fetches with no browser);
-  mnemos-o3a (one browser shared across sources); mnemos-gts.12 (a crash or hang mid-page)
+  mnemos-o3a (one browser shared across sources); mnemos-gts.12 (a crash or hang mid-page; a crashed browser
+  is started afresh)
 
 ## Tool errors over MCP
 

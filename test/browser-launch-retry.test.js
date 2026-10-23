@@ -87,6 +87,7 @@ function fakePlaywright(failures) {
               on() {},
             };
           },
+          on() {},
           async close() {},
         };
       },

@@ -10,7 +10,8 @@
  * stay needs_browser and the status says how to get one.
  *
  * The browser gets a fresh temporary profile (never the user's), deleted on
- * close, and the same fetch policy as a plain fetch: route interception checks
+ * close or when the browser goes away (a crash: the next page launches a new
+ * one), and the same fetch policy as a plain fetch: route interception checks
  * each request's URL (the full checkUrl for the page itself; the host rules
  * for what the page loads) and drops images, media and fonts, and every
  * connection goes through a local PolicyProxy that checks its host and DNS
@@ -247,6 +248,9 @@ interface PwContext {
   route(url: string, handler: (route: PwRoute) => unknown): Promise<void>;
   newPage(): Promise<PwPage>;
   newCDPSession(page: PwPage): Promise<PwCDPSession>;
+  browser(): { newBrowserCDPSession(): Promise<PwCDPSession> } | null;
+  /** Emitted when the context closes: by close(), or because the browser went away (it crashed, or was killed). */
+  on(event: "close", handler: () => void): void;
   close(): Promise<void>;
 }
 
@@ -254,6 +258,7 @@ interface PwContext {
 interface PwCDPSession {
   send(method: string, params?: Record<string, unknown>): Promise<unknown>;
   on(event: "Fetch.requestPaused", handler: (event: RequestPaused) => void): void;
+  detach(): Promise<void>;
 }
 
 /** The parts of the protocol's Fetch.requestPaused event used here. */
@@ -361,6 +366,23 @@ interface Running {
   proxy: PolicyProxy;
   profile: string;
   cleanup: () => void;
+  /** close() is closing it: its proxy and profile go once the browser has exited. */
+  closing?: boolean;
+  /** Its proxy is closed and its profile deleted (release). */
+  released?: boolean;
+}
+
+/** Closes a browser's proxy and deletes its profile, once. */
+function release(running: Running): void {
+  if (running.released) return;
+  running.released = true;
+  running.proxy.close();
+  process.off("exit", running.cleanup);
+  try {
+    running.cleanup();
+  } catch {
+    // a profile left in the temporary directory
+  }
 }
 
 /**
@@ -398,6 +420,19 @@ export class HeadlessBrowser implements PageRenderer {
   async profileDir(): Promise<string | undefined> {
     const running = await this.running;
     return running && "context" in running ? running.profile : undefined;
+  }
+
+  /** The process ID of the running browser, if any; for tests. */
+  async browserPid(): Promise<number | undefined> {
+    const running = await this.running;
+    const session = running && "context" in running ? await running.context.browser()?.newBrowserCDPSession() : undefined;
+    if (!session) return undefined;
+    try {
+      const { processInfo } = (await session.send("SystemInfo.getProcessInfo")) as { processInfo: { type: string; id: number }[] };
+      return processInfo.find((info) => info.type === "browser")?.id;
+    } finally {
+      await session.detach().catch(() => undefined);
+    }
   }
 
   async launch(): Promise<LaunchResult> {
@@ -450,7 +485,9 @@ export class HeadlessBrowser implements PageRenderer {
       // If mnemos exits with the browser open, its profile goes too (Playwright kills the browser).
       const cleanup = () => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
       process.once("exit", cleanup);
-      return { context, proxy, profile, cleanup };
+      const running: Running = { context, proxy, profile, cleanup };
+      context.on("close", () => this.gone(running));
+      return running;
     } catch (err) {
       proxy.close();
       if (profile) fs.rmSync(profile, { recursive: true, force: true });
@@ -460,6 +497,21 @@ export class HeadlessBrowser implements PageRenderer {
       this.failures++;
       return { ok: false, reason, hint: reason, retry_at: this.now() + wait };
     }
+  }
+
+  /**
+   * The context of a browser closed: by close(), or by the browser going away
+   * (it crashed, or was killed), which fails the renders it had open. Its
+   * proxy and profile go now, and if it is still the running browser, the
+   * next launch() starts a new one.
+   */
+  private gone(running: Running): void {
+    if (running.closing) return;
+    release(running);
+    const pending = this.running;
+    void pending?.then((current) => {
+      if (current === running && this.running === pending) this.running = undefined;
+    });
   }
 
   /** The route handler: drops images, media and fonts, and requests the fetch policy refuses. */
@@ -543,14 +595,9 @@ export class HeadlessBrowser implements PageRenderer {
     this.running = undefined;
     const running = await pending;
     if (!running || !("context" in running)) return;
+    running.closing = true;
     await running.context.close().catch(() => undefined);
-    running.proxy.close();
-    process.off("exit", running.cleanup);
-    try {
-      running.cleanup();
-    } catch {
-      // a profile left in the temporary directory
-    }
+    release(running);
   }
 }
 
