@@ -56,6 +56,7 @@ import { FetchPool, Fetcher } from "./fetcher.js";
 import { HeadlessBrowser, SharedRenderer } from "./headless.js";
 import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
 import { SourceIndexes } from "./source-indexes.js";
+import { sourcePrefix } from "./sources.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -103,6 +104,8 @@ const indexes = new SourceIndexes((source) => {
   const fetcher = new Fetcher({
     bookmarksFile,
     entries,
+    // MNEMOS_SKIP_FOLDERS matches folder paths as results show them, browser and profile first.
+    folderPrefix: () => sourcePrefix(source),
     pool: fetchPool,
     renderer: pageRenderer.user(),
     onPage: () => indexer.pagesChanged(),

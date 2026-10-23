@@ -436,6 +436,10 @@ root entry and that matrix in step.
   encoding from a byte order mark, else the header's charset, else a `<meta charset>` or
   `<meta http-equiv="Content-Type">` in the first 1024 bytes, else UTF-8; UTF-16 with a BOM;
   the prescan skipping comments, other tags' attributes and unknown labels.
+  `test/skip-folders-prefix.test.js` (unit, a fake home, a fetcher per source with a fake fetch):
+  `MNEMOS_SKIP_FOLDERS` with `--browser chrome,firefox` and `--browser all` matches the folder
+  paths results show (a full path, a browser, a browser and profile) as `list_folder_contents`
+  does, dropping text and chunks; plain names and one browser unchanged; the prefix asked at each refill.
 - **Untested**: Brotli and deflate bodies; IPv6 connections (the servers listen on IPv4 only).
 - **Tickets**: mnemos-tc4.8; mnemos-gts.3 (Brotli, deflate, IPv6)
 

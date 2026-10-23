@@ -393,6 +393,14 @@ export interface FetcherOptions {
   bookmarksFile?: () => string;
   /** The bookmarks; defaults to lib.allBookmarks(). */
   entries?: () => Iterable<lib.Entry>;
+  /**
+   * The prefix results give the folder paths of `entries` ("Chrome › Work › "
+   * when several browsers are read; sources.ts sourcePrefix), asked at each
+   * refill: MNEMOS_SKIP_FOLDERS is matched against the paths as results show
+   * them, so a browser, a profile or a full path copied from a result matches.
+   * Defaults to none, as when `entries` already carry it (lib.allBookmarks).
+   */
+  folderPrefix?: () => string;
   /** Where the index lives; defaults to the store's cacheDir(). */
   dir?: string;
   /** Defaults to safeFetch. */
@@ -447,6 +455,7 @@ export class Fetcher {
   private readonly env: NodeJS.ProcessEnv;
   private readonly bookmarksFile: () => string;
   private readonly entries: () => Iterable<lib.Entry>;
+  private readonly folderPrefix: () => string;
   private readonly dir: string | undefined;
   private readonly fetch: FetchFn;
   private readonly fetchOptions: FetcherOptions["fetchOptions"];
@@ -483,6 +492,7 @@ export class Fetcher {
     this.env = options.env ?? process.env;
     this.bookmarksFile = options.bookmarksFile ?? (() => lib.bookmarksPath());
     this.entries = options.entries ?? (() => lib.allBookmarks());
+    this.folderPrefix = options.folderPrefix ?? (() => "");
     this.dir = options.dir;
     this.fetch = options.fetch ?? safeFetch;
     this.fetchOptions = options.fetchOptions;
@@ -704,9 +714,12 @@ export class Fetcher {
     const store = this.store;
     if (!store || !this.holding) return;
     const config = fetchConfig(this.env);
+    const prefix = this.prefix();
     const info = new Map<string, { folders: string[]; added: number }>();
-    for (const { folder, node } of this.entries()) {
+    for (const { folder: own, node } of this.entries()) {
       const url = node.url ?? "";
+      // The path as results show it: a skip folder matching the path without its prefix matches it with one too.
+      const folder = `${prefix}${own}`;
       const known = info.get(url);
       if (known) {
         known.folders.push(folder);
@@ -739,6 +752,15 @@ export class Fetcher {
     }
     due.sort((a, b) => Number(b.pending ?? false) - Number(a.pending ?? false) || b.added - a.added);
     this.queue = due;
+  }
+
+  /** The folder path prefix now; none when the selection cannot be read (then it is one browser's, unprefixed). */
+  private prefix(): string {
+    try {
+      return this.folderPrefix();
+    } catch {
+      return "";
+    }
   }
 
   /**

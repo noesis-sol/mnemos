@@ -249,7 +249,7 @@ log.
 | `MNEMOS_INSTALL_RUNTIME` | — | `0` keeps mnemos from installing its embedding runtime on first start; `semantic_search` then matches keywords only |
 | `MNEMOS_FETCH_PAGES` | — | `0` turns off fetching bookmarked pages; `semantic_search` then uses titles only |
 | `MNEMOS_SKIP_DOMAINS` | — | Comma-separated domains never fetched; each also covers its subdomains |
-| `MNEMOS_SKIP_FOLDERS` | — | Comma-separated folder names (whole-word, like `list_folder_contents`) whose pages are never fetched; their titles are still searchable |
+| `MNEMOS_SKIP_FOLDERS` | — | Comma-separated folder names (whole-word, like `list_folder_contents`) whose pages are never fetched; their titles are still searchable. With several browsers, matched against folder paths as results show them, so `Chrome`, `Chrome › Work` or a full path from a result works too |
 | `MNEMOS_FETCH_ALLOW_HOSTS` | — | Comma-separated `host` or `host:port` exempt from the private-address block, e.g. an intranet wiki |
 | `MNEMOS_BROWSER` | an installed Chrome, Edge, Chromium or Brave | Path to a Chromium-based browser for pages that need JavaScript; `0` turns this off |
 

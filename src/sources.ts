@@ -154,6 +154,18 @@ export function selectSources(select: SelectOptions = {}): Selection {
   };
 }
 
+/**
+ * The folder path prefix results give `source`'s folders in the selection now
+ * ("Chrome › Work › "): "" with one browser, or when `source` is no longer
+ * selected. It changes with the selection: a browser's profile is named only
+ * while several of its profiles are read.
+ */
+export function sourcePrefix(source: Pick<Source, "bookmarks">, select?: SelectOptions): string {
+  const selection = selectSources(select);
+  const at = selection.sources.findIndex((s) => path.resolve(s.bookmarks) === path.resolve(source.bookmarks));
+  return at < 0 ? "" : selection.prefixes[at];
+}
+
 /** A source, and the name its profile goes by in folder paths: the display name, else the directory's. */
 export interface ProfileSource {
   source: Source;
