@@ -628,10 +628,7 @@ export class Fetcher {
     try {
       const store = this.openStore();
       if (this.holding) {
-        if (!store.renewLease(LEASE_NAME, this.leaseTtlMs)) {
-          this.lose();
-          return;
-        }
+        if (!this.holds()) return;
         // Bookmarks added while a long queue (say a day's 30-day refreshes) drains go ahead of it,
         // not behind: refill when the index has bookmarks with no page yet.
         if (this.queue.length > 0 && store.addPendingPages() > 0) {
@@ -652,6 +649,24 @@ export class Fetcher {
     } catch (err) {
       this.fail(err);
     }
+  }
+
+  /**
+   * Whether this process still holds the lease, renewing it; else gives up
+   * fetching (lose). Asked before a refill, a fetch and a page's store, not
+   * only at the heartbeat: a process that stalled past the TTL (its heartbeat
+   * with it) may have been taken over meanwhile, and must not fetch the new
+   * holder's pages again, store over them, or apply its own policy over the
+   * new holder's. A lease that lapsed with nobody taking it over is still
+   * this process's, and taken again. Throws when the index cannot be used.
+   */
+  private holds(): boolean {
+    const store = this.store;
+    if (!this.holding || !store) return false;
+    if (store.renewLease(LEASE_NAME, this.leaseTtlMs)) return true;
+    if (store.getLease(LEASE_NAME)?.holder === store.holderId && store.acquireLease(LEASE_NAME, this.leaseTtlMs)) return true;
+    this.lose();
+    return false;
   }
 
   /** The lease is gone (expired or taken over): stop fetching until it is taken again. */
@@ -712,7 +727,7 @@ export class Fetcher {
    */
   private refill(): void {
     const store = this.store;
-    if (!store || !this.holding) return;
+    if (!store || !this.holds()) return;
     const config = fetchConfig(this.env);
     const prefix = this.prefix();
     const info = new Map<string, { folders: string[]; added: number }>();
@@ -810,6 +825,7 @@ export class Fetcher {
     if (this.wakeTimer) clearTimeout(this.wakeTimer);
     this.wakeTimer = undefined;
     let waitMs = Infinity;
+    let checked = false;
     while (this.pool.hasRoom()) {
       const now = this.now();
       let picked = -1;
@@ -824,6 +840,16 @@ export class Fetcher {
         break;
       }
       if (picked < 0) break;
+      // Once per pump, before its first page: the lease may have lapsed since the heartbeat.
+      if (!checked) {
+        checked = true;
+        try {
+          if (!this.holds()) return;
+        } catch (err) {
+          this.fail(err);
+          return;
+        }
+      }
       const item = this.queue.splice(picked, 1)[0];
       if (this.adopt(item)) {
         if (!this.holding || this.stopped) return;
@@ -975,6 +1001,7 @@ export class Fetcher {
     }
     if (signal.aborted || this.stopped || !this.holding || !this.store) return;
     try {
+      if (!this.holds()) return; // taken over meanwhile: the page is the new holder's
       const previous = this.store.getPage(item.url);
       if (!previous) return; // the bookmark went away meanwhile
       let row = pageResult(item.url, outcome, extraction, previous.fail_count, this.now());

@@ -710,8 +710,14 @@ root entry and that matrix in step.
   counts each state as the fetcher's store changes it. `e2e/semantic.e2e.js` (see Suites): the
   installed package with the real model brings every kind of page to its final state, and never
   requests the URLs the policy skips.
-- **Untested**: the lease lapsing while a holder still runs (another process taking it over
-  mid-fetch); real websites (not tested, by design); the worker dying mid-page.
+  `test/fetch-lease-handover.test.js` (in process, two `Fetcher`s on two `IndexStore`s over one
+  index, injected clocks and `leaseTtlMs`, a fake fetch): a holder whose heartbeat stops
+  mid-fetch loses the lease once the clock passes the TTL, the other takes over and fetches
+  every page, and the first, when its fetch answers, finds the lease gone (`Fetcher.holds`, asked
+  before a refill, a fetch and a page's store): it stores nothing over the new holder's page and
+  fetches no more; a lone holder whose lease lapsed with nobody taking it keeps it and stores
+  and fetches on.
+- **Untested**: real websites (not tested, by design); the worker dying mid-page.
 - **Tickets**: mnemos-tc4.9; mnemos-dbz (new bookmarks before refreshes); mnemos-tc4.10 (chunks and embeds `pages.text`); mnemos-wmk (PDFs);
   mnemos-tc4.5 (`no_content` pages through a headless browser); mnemos-nma (one pool over every source's fetcher);
   mnemos-gts.4 (the lease changing holders); mnemos-gts.11 (the worker dying)
@@ -742,8 +748,12 @@ root entry and that matrix in step.
   `e2e/semantic.e2e.js` (see Suites), with the real model: a bookmark added to the file while
   the server runs is found by its title, a deleted one (with page text) is gone from results,
   and a renamed one is found by its new title, each waited for on the status.
-- **Untested**: two processes with different skip lists taking the lease in turn (each change
-  of holder retries the `needs_login` and skipped pages once).
+  `test/fetch-lease-handover.test.js` (see Background page fetching): two fetchers with
+  different skip lists taking the lease in turn: each change of holder applies the new holder's
+  skip lists (pages skipped with their text dropped, or back to pending and fetched), retries
+  the `needs_login` and fetch-skipped pages once and the old holder fetches nothing; nothing
+  again until the next change, nor a day before `REFRESH_MS`, and every fetched page at it.
+- **Untested**: nothing known.
 - **Tickets**: mnemos-tc4.4; mnemos-tc4.13 (acceptance on GitHub); mnemos-gts.4 (skip lists
   across lease holders)
 
