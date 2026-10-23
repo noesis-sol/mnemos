@@ -890,7 +890,8 @@ root entry and that matrix in step.
   with a browser renders them at once), each shell counting a failure. An ok page whose
   refresh is a shell keeps its text, `content_hash` and chunks (`keptText`) until the browser
   has had the last word: its text replaces them only if it differs, its `no_content` drops
-  them.
+  them. A failed fetch or render keeps the text a page had too (`keptText`), so a shell after
+  it still keeps the chunks.
 - **Tests**: `test/headless-resolve.test.js` (unit, injected file system and environment): each
   step of the order wins over the later ones, the order itself, nothing found, `0`, a path that
   is not there, macOS home Applications, Linux and Windows paths and prefixes.
@@ -908,6 +909,10 @@ root entry and that matrix in step.
   not a minute before, and is ok with the new text once the site serves it; a browser
   rendering the same text embeds nothing, other text replaces the chunks, no text drops them;
   `pagesToChunk`, `keptText` and `adoptedRow` keep a needs_browser page's kept text.
+  `test/failed-between-shells.test.js` (in process, likewise): shell, a network error, shell
+  again with no browser, and a failing render then a shell with one, keep the page's text and
+  chunks, embedding nothing again; `keptText`, `adoptedRow` and `pagesToChunk` keep a failed
+  page's kept text.
   `test/policy-proxy.test.js`: plain requests
   and CONNECT tunnels reach an allowed host; local names, private literals, names resolving to
   a private address and DNS failures are refused before connecting.
@@ -936,6 +941,7 @@ root entry and that matrix in step.
   tested with a 2 s `timeoutMs`); a crash through the `Fetcher` (the test calls `render`).
 - **Tickets**: mnemos-tc4.5; mnemos-g70 (needs_browser pages queued once after 30 days);
   mnemos-w3q (a shell refresh keeps an ok page's chunks; plain fetches with no browser);
+  mnemos-y8x (a failed fetch between two shells keeps the chunks);
   mnemos-o3a (one browser shared across sources); mnemos-gts.12 (a crash or hang mid-page; a crashed browser
   is started afresh)
 

@@ -737,7 +737,8 @@ export class IndexStore {
    * whose content_hash is not the one their chunks came from, and pages that
    * have lost their text (not just failing for now) but still have chunks
    * from it. A page has text when it is ok, or needs_browser with the text it
-   * had when ok, kept until the browser has had the last word.
+   * had when ok, kept until the browser has had the last word. A failed page
+   * is left as it is, chunks and any text it kept from before alike.
    */
   pagesToChunk(): { url: string; content_hash: string | null }[] {
     return this.db

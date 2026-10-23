@@ -213,12 +213,14 @@ export function pageResult(
 }
 
 /**
- * The text a page now needs_browser keeps from its row before: an ok page's
- * (or one it kept already), so its chunks stay until the browser has had the
- * last word; none for a page that had no text.
+ * The text a page now needs_browser or failed keeps from its row before: an
+ * ok page's (or one a needs_browser or failed row kept already), so its
+ * chunks stay until the browser has had the last word, and a shell after a
+ * failed fetch still has the text to keep; none for a page that had no text.
  */
 export function keptText(previous: Required<PageRow>): Pick<PageRow, "content_hash" | "text"> {
-  if ((previous.status !== "ok" && previous.status !== "needs_browser") || previous.content_hash === null) return {};
+  const kept = previous.status === "ok" || previous.status === "needs_browser" || previous.status === "failed";
+  if (!kept || previous.content_hash === null) return {};
   return { content_hash: previous.content_hash, text: previous.text };
 }
 
@@ -268,7 +270,12 @@ export function adoptedRow(
       };
     case "failed": {
       const fails = previous.fail_count + 1;
-      return { ...row, fail_count: fails, next_attempt_at: Math.max(theirs.next_attempt_at ?? 0, at + backoffMs(fails)) };
+      return {
+        ...row,
+        fail_count: fails,
+        next_attempt_at: Math.max(theirs.next_attempt_at ?? 0, at + backoffMs(fails)),
+        ...(theirs.content_hash === null ? keptText(previous) : {}),
+      };
     }
     default:
       return undefined;
@@ -1013,6 +1020,8 @@ export class Fetcher {
       const previous = this.store.getPage(item.url);
       if (!previous) return; // the bookmark went away meanwhile
       let row = pageResult(item.url, outcome, extraction, previous.fail_count, this.now());
+      // Failing for now: the text it had stays, for a shell on the next fetch to keep.
+      if (row.status === "failed") row = { ...row, ...keptText(previous) };
       // A PDF with no text is a scan, not a JavaScript shell: the browser would see no more.
       if (row.status === "no_content" && !item.browser && !pdf) {
         // A JavaScript shell, perhaps (or a bot check that day): the browser has
