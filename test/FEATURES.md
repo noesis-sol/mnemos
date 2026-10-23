@@ -440,8 +440,14 @@ root entry and that matrix in step.
   `MNEMOS_SKIP_FOLDERS` with `--browser chrome,firefox` and `--browser all` matches the folder
   paths results show (a full path, a browser, a browser and profile) as `list_folder_contents`
   does, dropping text and chunks; plain names and one browser unchanged; the prefix asked at each refill.
-- **Untested**: Brotli and deflate bodies; IPv6 connections (the servers listen on IPv4 only).
-- **Tickets**: mnemos-tc4.8; mnemos-gts.3 (Brotli, deflate, IPv6)
+  `test/fetch-encodings.test.js` (unit, local `node:http` servers on `127.0.0.1` and `[::1]`):
+  Brotli and (zlib-wrapped) deflate bodies decoded; Brotli and deflate bodies decompressing past
+  5 MB refused, exactly 5 MB of Brotli still fetched; a page on `[::1]` allowed by
+  `MNEMOS_FETCH_ALLOW_HOSTS`, and a name resolving to `::1` alone, fetched over IPv6 through the
+  checked address; `[::1]` blocked without the allow list. The IPv6 tests skip, with the reason,
+  on a machine that cannot listen on `::1`.
+- **Untested**: raw (headerless) deflate bodies, which fail today.
+- **Tickets**: mnemos-tc4.8; mnemos-gts.3 (Brotli, deflate, IPv6); mnemos-e5r (raw deflate)
 
 ## PDF bookmarks
 
