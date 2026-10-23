@@ -679,7 +679,11 @@ root entry and that matrix in step.
   the fake's synonyms; the relative cutoff (median and best). `test/semantic-margin-size.test.js`
   and `test/semantic-model-start.test.js` (next section); `test/semantic-page-states.test.js`,
   `test/page-fetcher.test.js` (the notice, `status.fetching`, `status.browser`) and
-  `test/page-chunks.test.js` (page matches) under their areas. `test/semantic-skip-lists.test.js`
+  `test/page-chunks.test.js` (page matches) under their areas. `test/semantic-notes.test.js` (in
+  process, fake embedder, a gated one holding titles back): the note's exact wording for keyword
+  hits while the index could not be built (an unusable cache directory) and while it is not open
+  yet, and, with the model ready, for titles still being embedded (`x of N`, an unembedded title
+  found as a keyword hit), with no note once all are. `test/semantic-skip-lists.test.js`
   (in process, a fake home, page text stored as a holder with no skip list left it): a skipped
   folder (a URL in it and elsewhere too), a domain, a wildcard or a redirect into a skipped
   domain (the page's `final_url`) keeps a page's text out while
@@ -688,9 +692,7 @@ root entry and that matrix in step.
   Suites): the installed package with the real model scores the golden queries of
   `e2e/fixtures/semantic` over titles and pages, in English and Greek.
 - **Untested**: the real model's cutoff on libraries other than the hand-calibrated one and the
-  31-bookmark fixture (see `MODEL_RELEVANCE` in `src/embedder.ts`); the keyword-only answers
-  while the index is not open yet or could not be built, and the note while titles are still
-  being embedded with the model ready (no test asserts their wording).
+  31-bookmark fixture (see `MODEL_RELEVANCE` in `src/embedder.ts`).
 - **Tickets**: mnemos-tc4.3; mnemos-tc4.10 (page chunks); mnemos-tc4.12 (acceptance over titles);
   mnemos-gts.10 (the keyword-only notes); mnemos-b01 (the asking process's skip lists)
 
