@@ -8,7 +8,7 @@ description: Set up deterministic test suites for a project that has no tests, o
 This skill gives a project tests that pass or fail in code: unit suites for its logic and end-to-end
 suites through what its users touch, in the frameworks the project already uses. Nothing here is
 judged by an agent; a test asserts, and its runner exits 0 or not. The suites run from two scripts
-in the project, which orchestra calls:
+in the project, which tutti calls:
 
 - `scripts/check-fast.sh`: the merge check, run on every change before it merges. Keep it to
   minutes.
@@ -92,8 +92,9 @@ anyway.
 
 ## 4. Get the runners passing on main
 
-Run `scripts/check-fast.sh`, then `scripts/check-full.sh`, on your branch from the main branch,
-and read what fails. Don't stop until both exit 0.
+Run `scripts/check-fast.sh` on your branch from the main branch, read what fails, fix it and run it
+again until it exits 0; then `scripts/check-full.sh` the same way, after the repeats below. Don't
+stop until both exit 0.
 
 - A test you wrote that fails: fix the test if it is wrong. If it found a bug in the app, see the
   rules below.
@@ -104,10 +105,12 @@ and read what fails. Don't stop until both exit 0.
 - A suite that needs a service: start it from the test or the suite's command (a container, an
   in-memory database, Playwright's `webServer`), not by hand.
 
-Run each runner twice more, to catch a test that passes only sometimes, and time it. Record how long
-each took in your ticket's notes (`check-fast.sh: 48s; check-full.sh: 4m10s`) and in FEATURES.md. A
-check-fast that takes more than a few minutes holds up every merge: move its slowest suite to
-check-full.
+Once check-fast passes, run it twice more, to catch a test that passes only sometimes: every merge
+runs it, so a flaky test there fails changes that broke nothing. check-full runs once at the end of
+a run: run it once, after those, and again only where a fix since touched what it runs. Time each
+run, and record how long each runner took in your ticket's notes (`check-fast.sh: 48s;
+check-full.sh: 4m10s`) and in FEATURES.md. A check-fast that takes more than a few minutes holds up
+every merge: move its slowest suite to check-full.
 
 ## 5. Map the features
 

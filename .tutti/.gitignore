@@ -1,0 +1,4 @@
+# tutti's files that aren't committed: the log, the run reports and the run's own files.
+tutti.log
+reports/
+run/
