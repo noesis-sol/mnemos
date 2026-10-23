@@ -270,8 +270,15 @@ root entry and that matrix in step.
   `test/index-store-rollback.test.js`: a write transaction that SQLite rolls back itself on a
   full disk (`PRAGMA max_page_count`) rethrows "database or disk is full" with its errcode, not
   ROLLBACK's "no transaction is active"; one that fails while still open is rolled back.
-- **Untested**: corruption that appears while a store is open (callers see `isCorrupt` errors
-  and reopen). Two processes sharing the lease are driven by `test/page-fetcher.test.js` (two
+  `test/index-corrupt-open.test.js` (in process, the fake embedder and a fake fetch, a temporary
+  cache directory; the WAL checkpointed from another connection, then the header overwritten
+  under an open store): the Indexer's next run, from `checkForChanges` or the poll, fails with
+  "file is not a database", reported in `status()` and on stderr, and the run after reopens the
+  store, moves the bad file aside and embeds every title again; `semanticSearch` meanwhile
+  answers with keyword hits (the scoring error, then "the index could not be built"); a
+  Fetcher's failure is reported and its next heartbeat reopens the store, takes the lease again
+  and fetches the new index's pages.
+- **Untested**: two processes sharing the lease are driven by `test/page-fetcher.test.js` (two
   servers on one cache: only one fetches, each page once); a lease lapsing while its holder
   still runs is not (see Background page fetching).
 - **Tickets**: mnemos-tc4.6; mnemos-4na (two processes opening a new index at once);
