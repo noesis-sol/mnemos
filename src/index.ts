@@ -57,6 +57,7 @@ import { HeadlessBrowser, SharedRenderer } from "./headless.js";
 import { MAX_LIMIT, DEFAULT_LIMIT, semanticSearch } from "./semantic.js";
 import { SourceIndexes } from "./source-indexes.js";
 import { sourcePrefix } from "./sources.js";
+import { stopInstalls } from "./runtime.js";
 
 const require = createRequire(import.meta.url);
 const { version: VERSION } = require("../package.json") as { version: string };
@@ -283,9 +284,14 @@ server.registerTool(
 );
 
 
-/** Aborts the fetches in flight and gives the fetcher leases up, so another mnemos can take over. */
+/**
+ * Aborts the fetches in flight and gives the fetcher leases up, so another
+ * mnemos can take over, and stops the indexing and a runtime install, so the
+ * process exits once the client is gone.
+ */
 function shutdown(): void {
   indexes.stop();
+  stopInstalls();
 }
 
 async function main(): Promise<void> {

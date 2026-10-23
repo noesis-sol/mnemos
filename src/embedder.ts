@@ -354,6 +354,11 @@ export interface FakeEmbedderOptions {
   gate?: string;
   /** A file embed() appends each embedded text to, one JSON string a line (MNEMOS_FAKE_EMBED_LOG). */
   log?: string;
+  /**
+   * How long each embed() call takes (MNEMOS_FAKE_EMBED_DELAY_MS): a slow
+   * embedder that, like a model's run, keeps the process alive meanwhile.
+   */
+  delayMs?: number;
   /** A reason to report as unavailable, and to reject embed() with (MNEMOS_FAKE_EMBED_UNAVAILABLE). */
   unavailable?: string;
 }
@@ -379,7 +384,8 @@ const FAKE_SYNONYMS = new Map([
  * normalised, so texts that share words are similar and texts that share none
  * score 0 (barring hash collisions). Deterministic, and `kind` is ignored. The
  * gate and log let tests over MCP hold embedding back and count what was
- * embedded, and `unavailable` plays a model that could not be loaded.
+ * embedded, the delay plays a model's run, and `unavailable` plays a model
+ * that could not be loaded.
  */
 export class FakeEmbedder implements Embedder {
   readonly id = "mnemos-fake-embedder";
@@ -395,11 +401,12 @@ export class FakeEmbedder implements Embedder {
   }
 
   async embed(texts: string[], _kind: EmbedKind): Promise<Float32Array[]> {
-    const { gate, log, unavailable } = this.options;
+    const { gate, log, unavailable, delayMs } = this.options;
     if (unavailable) throw new EmbedderUnavailableError(unavailable);
     while (gate && !fs.existsSync(gate)) {
       await new Promise((resolve) => setTimeout(resolve, 20).unref());
     }
+    if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
     if (log && texts.length > 0) fs.appendFileSync(log, texts.map((t) => JSON.stringify(t) + "\n").join(""));
     return texts.map((text) => fakeVector(text, this.dim));
   }
@@ -427,7 +434,8 @@ export function fakeVector(text: string, dim: number = MODEL_DIM): Float32Array 
 
 /**
  * The fake when MNEMOS_EMBEDDER=fake (tests only, with MNEMOS_FAKE_EMBED_GATE,
- * MNEMOS_FAKE_EMBED_LOG and MNEMOS_FAKE_EMBED_UNAVAILABLE), else the real
+ * MNEMOS_FAKE_EMBED_LOG, MNEMOS_FAKE_EMBED_DELAY_MS and
+ * MNEMOS_FAKE_EMBED_UNAVAILABLE), else the real
  * model, not yet loaded; MNEMOS_INSTALL_RUNTIME=0 keeps it from installing
  * its runtime.
  */
@@ -440,6 +448,7 @@ export function createEmbedder(
       gate: env.MNEMOS_FAKE_EMBED_GATE || undefined,
       log: env.MNEMOS_FAKE_EMBED_LOG || undefined,
       unavailable: env.MNEMOS_FAKE_EMBED_UNAVAILABLE || undefined,
+      delayMs: Number(env.MNEMOS_FAKE_EMBED_DELAY_MS) || undefined,
     });
   }
   return new ModelEmbedder({ dir: cacheDir(env), installRuntime: env.MNEMOS_INSTALL_RUNTIME !== "0", ...options });

@@ -262,6 +262,8 @@ export class Indexer {
   private timer: NodeJS.Timeout | undefined;
   /** Whether the scheduled run includes the titles, or is the page pass alone. */
   private timerFull = false;
+  /** Set by close(): no run is scheduled or started again. */
+  private closed = false;
 
   constructor(options: IndexerOptions) {
     this.embedder = options.embedder;
@@ -316,6 +318,7 @@ export class Indexer {
    * handshake) goes first, then looks for a changed file every pollMs.
    */
   start(): void {
+    if (this.closed) return;
     this.schedule(0, true);
     if (this.poll) return;
     this.poll = setInterval(() => this.pollForChanges(), this.pollMs);
@@ -353,8 +356,14 @@ export class Indexer {
     }
   }
 
-  /** Stops scheduled runs and the poll and closes the store; a run in progress stops at its next batch. */
+  /**
+   * Stops scheduled runs and the poll and closes the store, for good; a run in
+   * progress stops at its next batch, and the run it would have started next
+   * is dropped.
+   */
   close(): void {
+    this.closed = true;
+    this.again = "none";
     if (this.timer) clearTimeout(this.timer);
     this.timer = undefined;
     if (this.poll) clearInterval(this.poll);
@@ -377,6 +386,7 @@ export class Indexer {
 
   /** A run after `delayMs`, unless one is already scheduled; `full` includes the titles. */
   private schedule(delayMs: number, full: boolean): void {
+    if (this.closed) return;
     this.timerFull ||= full;
     if (this.timer) return;
     this.timer = setTimeout(() => {
@@ -390,6 +400,7 @@ export class Indexer {
 
   /** Runs now, or once more after the run in progress. The page pass alone needs an open store. */
   private run(full: boolean): void {
+    if (this.closed) return;
     if (this.running) {
       if (full) this.again = "full";
       else if (this.again === "none") this.again = "pages";
@@ -407,6 +418,8 @@ export class Indexer {
   }
 
   private fail(err: unknown): void {
+    // A run stopped by close(), at shutdown: no failure to report.
+    if (this.closed) return;
     const error = message(err);
     // stderr, never stdout (the MCP channel); once per distinct error, not per retry.
     if (this.current.error !== error) console.error(`mnemos: indexing bookmarks failed: ${error}`);

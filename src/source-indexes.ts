@@ -64,9 +64,17 @@ export class SourceIndexes {
     for (const source of sources) this.get(source);
   }
 
-  /** Shutdown: aborts the fetches in flight and gives the fetcher leases up, so another mnemos can take over. */
+  /**
+   * Shutdown: aborts the fetches in flight and gives the fetcher leases up, so
+   * another mnemos can take over, and closes the indexers, whose runs in
+   * progress stop at their next batch: nothing is left to keep the process
+   * alive embedding for a client that is gone.
+   */
   stop(): void {
     this.stopped = true;
-    for (const { fetcher } of this.made.values()) fetcher?.stop();
+    for (const { indexer, fetcher } of this.made.values()) {
+      fetcher?.stop();
+      indexer.close();
+    }
   }
 }

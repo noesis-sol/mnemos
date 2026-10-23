@@ -267,11 +267,26 @@ function lastUsed(folder: string): number {
   return fs.statSync(folder).mtimeMs;
 }
 
+/** Stops each npm install running; set by stopInstalls(). */
+const runningInstalls = new Set<() => void>();
+let installsStopped = false;
+
+/**
+ * Shutdown: stops the npm installs running, which then reject with
+ * RuntimeInstallError, and has every later one reject before it starts, so
+ * npm does not go on downloading for a client that is gone.
+ */
+export function stopInstalls(): void {
+  installsStopped = true;
+  for (const kill of runningInstalls) kill();
+}
+
 /** Runs `npm install` in `cwd`, its output kept from stdout (the MCP channel). */
 function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise<void> {
   const npm = npmCommand(env);
   const args = [...npm.args, "install", "--ignore-scripts", "--omit=dev", "--no-audit", "--no-fund", "--no-update-notifier", "--loglevel=error"];
   return new Promise((resolve, reject) => {
+    if (installsStopped) return reject(new RuntimeInstallError("mnemos is shutting down"));
     let output = "";
     const child = spawn(npm.command, args, { cwd, env: npmEnv(env), shell: npm.shell, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     const collect = (chunk: Buffer) => {
@@ -282,6 +297,7 @@ function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise
     // npm would go on writing into the cache directory after mnemos exits.
     const kill = () => child.kill();
     process.once("exit", kill);
+    runningInstalls.add(kill);
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -294,6 +310,7 @@ function runNpm(cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise
       settled = true;
       clearTimeout(timer);
       process.removeListener("exit", kill);
+      runningInstalls.delete(kill);
       if (err) reject(err);
       else resolve();
     };
