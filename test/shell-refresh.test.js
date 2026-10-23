@@ -82,6 +82,8 @@ function harness({ browser }) {
     clock: Date.UTC(2026, 0, 1),
     site: { word: "aardvark" },
     rendered: { word: "aardvark" },
+    /** How long a render takes: longer than the indexer's debounce lets it run on the shell first. */
+    renderMs: 1,
     calls: [],
     renders: [],
     embedder: new CountingEmbedder(),
@@ -92,7 +94,7 @@ function harness({ browser }) {
       browser ? { ok: true } : { ok: false, reason: "no Chromium-based browser found", hint: "set MNEMOS_BROWSER" },
     render: async (url) => {
       h.renders.push(url);
-      await sleep(1);
+      await sleep(h.renderMs);
       return answer(url, h.rendered);
     },
     close: async () => {},
@@ -207,6 +209,7 @@ test("shell refresh, no browser: the page keeps its chunks and is fetched plainl
 test("shell refresh, a browser rendering the same text: the chunks are not cut or embedded again", async () => {
   const h = harness({ browser: true });
   try {
+    h.renderMs = 300;
     const first = await okThenShell(h);
     await h.settle(() => h.renders.length === 1 && h.page().status === "ok", "the render");
     assert.equal(h.page().content_hash, first.page.content_hash);
