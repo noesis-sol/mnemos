@@ -1,0 +1,90 @@
+name: Release
+
+# A release is the push of a tag vX.Y.Z on main: npm version X.Y.Z, the
+# CHANGELOG entry "## X.Y.Z (date)", an annotated tag, then
+# `git push --follow-tags`. It runs every job of ci.yml and the acceptance
+# test (semantic.yml) on ubuntu, macOS and Windows on Node 22 and 24, and only
+# when all pass publishes to npm and creates the GitHub release with the
+# CHANGELOG entry as its notes. A failed release publishes nothing: re-run its
+# failed jobs, or fix main and push the tag again on the fixed commit.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Before the matrix, which costs the most minutes.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The tag is package.json's version, on main, with a CHANGELOG entry
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME but package.json's version is $version"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME is not on main"
+            exit 1
+          fi
+          scripts/release-notes.sh "$version" > /dev/null
+
+  ci:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  acceptance:
+    needs: check
+    uses: ./.github/workflows/semantic.yml
+    with:
+      full: true
+
+  # npm's trusted publishing: npm takes this job's OIDC token, so there is no
+  # npm token to keep. mnemos-mcp's settings on npmjs.com name this file,
+  # release.yml, of noesis-sol/mnemos as its trusted publisher. It needs
+  # npm 11.5.1 or later; Node 24 brings it.
+  publish:
+    needs: [ci, acceptance]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      # No npm cache: what is published is built only from the registry.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+        env:
+          ONNXRUNTIME_NODE_INSTALL: skip
+      # A re-run after npm took the version goes on to the GitHub release.
+      - name: Publish to npm
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if [ -n "$(npm view "mnemos-mcp@$version" version 2> /dev/null)" ]; then
+            echo "mnemos-mcp@$version is on npm already"
+          else
+            npm publish
+          fi
+      - name: GitHub release
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "The release $GITHUB_REF_NAME exists already"
+          else
+            scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
+            gh release create "$GITHUB_REF_NAME" --verify-tag --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}

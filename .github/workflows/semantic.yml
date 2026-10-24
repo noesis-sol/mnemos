@@ -6,15 +6,20 @@ name: Semantic search acceptance
 # (e2e/semantic.e2e.js). It renders JavaScript-only pages in the runner's
 # preinstalled Chrome; with none, the test fails, as GitHub sets $CI.
 # Every push to main and every pull request: ubuntu on Node 22 only, since the
-# repo is private and Actions minutes count (macOS x10, Windows x2). Weekly
-# and by hand: ubuntu, macOS and Windows on Node 22 and 24.
+# repo is private and Actions minutes count (macOS x10, Windows x2). A release
+# (release.yml calls this with full: true) and by hand: ubuntu, macOS and
+# Windows on Node 22 and 24.
 on:
   push:
     branches: [main]
   pull_request:
-  schedule:
-    - cron: "23 4 * * 1"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      full:
+        description: Run on ubuntu, macOS and Windows on Node 22 and 24
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,8 +33,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
-        node-version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '[22, 24]' || '[22]') }}
+        os: ${{ fromJSON((inputs.full || github.event_name == 'workflow_dispatch') && '["ubuntu-latest", "macos-latest", "windows-latest"]' || '["ubuntu-latest"]') }}
+        node-version: ${{ fromJSON((inputs.full || github.event_name == 'workflow_dispatch') && '[22, 24]' || '[22]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
