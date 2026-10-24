@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.5.1 (2026-10-24)
+
+Fixes only, nothing breaking: Chrome's account bookmarks are read, pages that declare their encoding in a `<meta>` are decoded in it, the semantic index follows bookmark changes within about a minute, and mnemos exits when its MCP client closes.
 
 ### Fixed
 
@@ -17,7 +19,6 @@
 - A bookmarked page that was indexed keeps its passages in `semantic_search` when its 30-day refresh comes back as a JavaScript shell (the site became an app, or served a bot check that day), until the headless browser has read it: its text replaces them only if it differs. Before, they were dropped at once, and for good without a browser (`MNEMOS_BROWSER=0`, or no Chrome, Edge, Chromium or Brave installed), since such a page was never fetched again. Without a browser, pages that need one are now fetched plainly again after 1 hour, 6 hours, 1 day, 7 days, then every 30 days, and come back once the site serves their text.
 - A bookmarked page that keeps its passages through a JavaScript-shell refresh keeps them too when a fetch or render in between fails (a network error, the site down that day): the shell after the failure no longer drops them before the headless browser has read the page.
 - Renaming a bookmark now re-indexes its page's passages with the new title, so `semantic_search` ranks the page against the title it has, not the old one. Before, only the bookmark's title was re-indexed, and its page kept matching on the old title until the page's text changed, for a page that does not change never. The same holds when a URL bookmarked twice loses the bookmark whose title its passages used.
-- With several MCP clients running mnemos on one bookmarks file, `semantic_search` no longer returns the text of pages its own `MNEMOS_SKIP_DOMAINS` / `MNEMOS_SKIP_FOLDERS` cover: such a bookmark is found by its title alone, with no snippet. Before, a server with no skip list (or another selection of browsers) that held the fetcher lease fetched those pages, and every server's `semantic_search` matched and quoted their text.
 - With several MCP clients running mnemos on one bookmarks file, `semantic_search` no longer returns the text of pages its own `MNEMOS_SKIP_DOMAINS` / `MNEMOS_SKIP_FOLDERS` cover, by the bookmark's URL or the one a redirect took the fetch to: such a bookmark is found by its title alone, with no snippet. Before, a server with no skip list (or another selection of browsers) that held the fetcher lease fetched those pages, and every server's `semantic_search` matched and quoted their text.
 - mnemos exits within about a second of its MCP client closing stdin, as clients do to stop a server. Before, it stopped fetching pages but went on embedding every bookmark and page left to index, and on a first start installing its embedding runtime with npm, which on a large library was minutes of CPU and network after the client had gone, competing with the client's next mnemos for the index.
 - When the embedding model fails to load (a download cut off) and is tried again, mnemos reuses the embedding runtime it already loaded and loads only the model. Before, it loaded the runtime again: if another version's mnemos had removed the runtime's folder as unused meanwhile (a mnemos running over 30 days without loading it again), the retry found it missing and semantic search stayed off until restart with `MNEMOS_INSTALL_RUNTIME=0`, or npm installed the ~488 MB runtime again.

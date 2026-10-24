@@ -1,6 +1,6 @@
 {
   "name": "mnemos-mcp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "MCP server exposing local browser bookmarks (Chrome, Edge, Brave, Vivaldi, Opera, Chromium, Firefox, Safari) as a signal of what the user values and endorses, with local semantic search over their titles and pages",
   "type": "module",
   "bin": {
