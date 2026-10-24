@@ -8,7 +8,9 @@
  *
  * Labels map to encodings through TextDecoder, which implements the Encoding
  * standard's label table, so "latin1" and "iso-8859-1" both come out as
- * windows-1252, as in a browser.
+ * windows-1252, as in a browser. Node 22's lacks iso-8859-16 and
+ * x-user-defined, which are then unknown labels; a <meta> naming
+ * x-user-defined still means windows-1252.
  */
 
 /** How far into the body the <meta> prescan looks, as in the HTML standard. */
@@ -191,18 +193,26 @@ function metaCharset(s: Scanner): string | null {
     } else if (attr.name === "content") {
       const label = charset === undefined ? charsetFromContent(attr.value) : null;
       if (label !== null) {
-        charset = encodingForLabel(label);
+        charset = metaEncoding(label);
         needPragma = true;
       }
     } else if (attr.name === "charset") {
-      charset = encodingForLabel(attr.value);
+      charset = metaEncoding(attr.value);
       needPragma = false;
     }
   }
   if (needPragma === null || (needPragma && !gotPragma) || !charset) return null;
   if (charset === "utf-16be" || charset === "utf-16le") return "utf-8";
-  if (charset === "x-user-defined") return "windows-1252";
   return charset;
+}
+
+/**
+ * The encoding a <meta>'s label names, x-user-defined being windows-1252, as in
+ * a browser. x-user-defined is matched by its one label, since Node 22's
+ * TextDecoder does not know it.
+ */
+function metaEncoding(label: string): string | null {
+  return label.trim().toLowerCase() === "x-user-defined" ? "windows-1252" : encodingForLabel(label);
 }
 
 /**

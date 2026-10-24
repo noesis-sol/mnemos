@@ -81,6 +81,21 @@ async function quietly(fn) {
   }
 }
 
+/**
+ * Awaits `promise` with a timer holding the event loop open. The gated fake
+ * polls its gate, and the indexer schedules its runs, on unref'd timers, so a
+ * server still exits; with nothing else pending, Node 22's test runner cancels
+ * the test ("the event loop has already resolved").
+ */
+async function held(promise) {
+  const timer = setInterval(() => {}, 1_000);
+  try {
+    return await promise;
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 async function until(condition, what) {
   const deadline = Date.now() + 10_000;
   while (!condition()) {
@@ -197,7 +212,7 @@ test("semantic notes: titles still being embedded with the model ready, then no 
     );
 
     fs.writeFileSync(gate, "");
-    await indexer.idle();
+    await held(indexer.idle());
     assert.deepEqual(indexer.status(), {
       state: "ready",
       titles_done: fixtureCount + 3,
