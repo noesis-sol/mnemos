@@ -47,6 +47,9 @@ embeds your titles, and fetches and embeds your pages in the background. Until
 the index is ready, `semantic_search` returns keyword matches and its `status`
 says how far indexing has got.
 
+<img width="1774" height="887" alt="Bookmarks to Vector Store Pipeline" src="https://github.com/user-attachments/assets/9f4f2929-92e3-47d9-aaaa-f4d223310894" />
+
+
 Then ask things like *"What have I been reading about lately?"* or *"Did I
 save anything on keeping a sourdough starter alive?"*
 
