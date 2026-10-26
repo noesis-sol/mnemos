@@ -19,6 +19,8 @@
     "mcp_servers": []
   },
   "templates": {
+    "worker_prompt": 8,
+    "verifier": 2,
     "check_suite_skill": 1
   }
 }
